@@ -98,8 +98,12 @@ jobs:
           Set-Content -Path src-tauri/tauri.signing.json -Value $conf
           "TAURI_SIGN_ARGS=--config src-tauri/tauri.signing.json" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # macOS：tauri CLI 读取 APPLE_* 环境变量完成签名与公证；变量为空时跳过签名
-      - run: pnpm tauri build ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
+      # macOS：配置了证书 secrets 时，tauri CLI 读取 APPLE_* 环境变量完成签名与公证。
+      # 未配置时不导出这些变量（空字符串会覆盖配置、导致证书导入失败），
+      # 改用 tauri.conf.json 中的 signingIdentity "-"（ad-hoc 签名，无需证书）。
+      - name: Export Apple signing env
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_SET == 'true'
+        shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -107,6 +111,14 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!v}" ]; then
+              d="EOF_$RANDOM$RANDOM"
+              { echo "$v<<$d"; echo "${!v}"; echo "$d"; } >> "$GITHUB_ENV"
+            fi
+          done
+      - run: pnpm tauri build ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
 
       - name: Verify signatures
         if: (runner.os == 'macOS' && env.APPLE_SIGNING_SET == 'true') || (runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != '')
