@@ -228,6 +228,7 @@
     "checkout": "检出",
     "newBranch": "新建分支…",
     "newBranchFrom": "从此新建分支…",
+    "newBranchFromName": "从「{{name}}」新建分支…",
     "merge": "合并到当前分支",
     "rebase": "当前分支变基到此",
     "rename": "重命名…",
@@ -253,6 +254,11 @@
     "info": "信息"
   },
   "branchDialog": {
+    "source": "来源分支或版本",
+    "head": "当前版本（HEAD）",
+    "custom": "标签或提交…",
+    "revision": "标签或提交",
+    "duplicate": "已存在同名本地分支",
     "createTitle": "新建分支",
     "name": "分支名",
     "startPoint": "起点（分支或提交，留空为 HEAD）",
@@ -744,10 +750,13 @@
     "syncNote": "强制推送的目标会按普通推送执行；没有规则的仓库会被跳过。"
   },
   "branchPopup": {
+    "loadFailed": "无法加载分支",
+    "empty": "没有匹配的分支",
     "title": "分支",
     "actions": "操作",
     "checkoutRev": "检出标签或提交"
   },
+  "layout": { "resize": "调整分区大小" },
   "repoSwitcher": {
     "title": "切换仓库"
   },

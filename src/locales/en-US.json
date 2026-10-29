@@ -228,6 +228,7 @@
     "checkout": "Checkout",
     "newBranch": "New branch…",
     "newBranchFrom": "New branch from here…",
+    "newBranchFromName": "New branch from {{name}}…",
     "merge": "Merge into current",
     "rebase": "Rebase current onto this",
     "rename": "Rename…",
@@ -253,6 +254,11 @@
     "info": "Info"
   },
   "branchDialog": {
+    "source": "Source branch or revision",
+    "head": "Current revision (HEAD)",
+    "custom": "Tag or commit…",
+    "revision": "Tag or commit",
+    "duplicate": "A local branch with this name already exists",
     "createTitle": "New branch",
     "name": "Branch name",
     "startPoint": "Start point (branch or commit, empty for HEAD)",
@@ -744,10 +750,13 @@
     "syncNote": "Force targets are pushed without force; repositories without rules are skipped."
   },
   "branchPopup": {
+    "loadFailed": "Unable to load branches",
+    "empty": "No matching branches",
     "title": "Branches",
     "actions": "Actions",
     "checkoutRev": "Checkout tag or revision"
   },
+  "layout": { "resize": "Resize panels" },
   "repoSwitcher": {
     "title": "Switch repository"
   },

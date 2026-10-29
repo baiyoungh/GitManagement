@@ -7,6 +7,7 @@ import { useBackendEvents } from './hooks/useBackendEvents';
 import { detectSystemLanguage, setLanguage } from './i18n';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
+import { SplitView } from './components/SplitView';
 import { BottomPanel } from './components/BottomPanel';
 import { ConfirmHost, Toasts } from './components/ui';
 import { useStashes } from './api/queries';
@@ -126,6 +127,7 @@ export function App() {
   const settings = useApp((s) => s.settings);
   const repoId = useApp((s) => s.selectedRepoId);
   const tab = useApp((s) => s.tab);
+  const bottomOpen = useApp((s) => s.bottomOpen);
   const setTab = useApp((s) => s.setTab);
   const repos = useRepos();
   const info = useAppInfo();
@@ -208,7 +210,8 @@ export function App() {
           <button onClick={() => useApp.getState().openDialog({ type: 'settings' })}>{t('top.settings')}</button>
         </div>
       )}
-      <div className="main">
+      <SplitView id="workspace" direction="column" initialSizes={[75, 25]} minSizes={[280, 100]} collapsed={bottomOpen ? undefined : { index: 1, size: 34 }}>
+      <SplitView id="repositories" className="main" initialSizes={[20, 80]} minSizes={[180, 520]}>
         <Sidebar />
         <main className="content">
           {!repo ? (
@@ -235,8 +238,9 @@ export function App() {
             </>
           )}
         </main>
-      </div>
+      </SplitView>
       <BottomPanel />
+      </SplitView>
       <Dialogs />
       <SyncDialogHost />
       <ConfirmHost />

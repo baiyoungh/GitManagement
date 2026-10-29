@@ -9,6 +9,7 @@ import { invalidateRepo, reportError, useBranches, useStatus } from '../api/quer
 import { useApp } from '../stores/appStore';
 import { useContextMenu, type MenuItem } from '../components/ui';
 import { Icon } from '../components/Icon';
+import { SplitView } from '../components/SplitView';
 import { DiffViewer } from './DiffViewer';
 import { GRAPH_COLORS, layoutGraph, type GraphRow } from '../lib/graph';
 import { dateTime, relativeTime } from '../lib/format';
@@ -263,7 +264,7 @@ export function LogView({ repoId }: { repoId: string }) {
           <Icon name="refresh" />
         </button>
       </div>
-      <div className="log-body">
+      <SplitView id="log" className="log-body" initialSizes={[60, 40]} minSizes={[280, 260]}>
         <div className="log-list" ref={parentRef} role="listbox" aria-label={t('nav.log')} tabIndex={0}
           onKeyDown={(e) => {
             if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -313,7 +314,7 @@ export function LogView({ repoId }: { repoId: string }) {
           {!sel ? (
             <p className="muted pad">{t('log.selectCommit')}</p>
           ) : (
-            <>
+            <SplitView id="log-details" direction="column" initialSizes={[25, 25, 50]} minSizes={[70, 80, 100]}>
               <div className="commit-files">
                 <h4>{t('log.changedFiles', { count: detail.data?.files.length ?? 0 })}</h4>
                 <ul>
@@ -340,8 +341,8 @@ export function LogView({ repoId }: { repoId: string }) {
                   ))}
                 </ul>
               </div>
-              {detail.data && (
                 <div className="commit-meta-box">
+                {detail.data && <>
                   <div>
                     <span className="mono">{detail.data.hash.slice(0, 10)}</span> · {detail.data.authorName} &lt;{detail.data.authorEmail}&gt;
                   </div>
@@ -362,17 +363,15 @@ export function LogView({ repoId }: { repoId: string }) {
                     </div>
                   )}
                   <pre className="commit-message-view">{detail.data.message}</pre>
+                </>}
                 </div>
-              )}
-              {fileTarget && (
-                <div className="log-diff">
-                  <DiffViewer target={fileTarget} />
-                </div>
-              )}
-            </>
+              <div className="log-diff">
+                {fileTarget ? <DiffViewer target={fileTarget} /> : <p className="muted pad">{t('diff.selectFile')}</p>}
+              </div>
+            </SplitView>
           )}
         </div>
-      </div>
+      </SplitView>
       {menu.element}
     </div>
   );

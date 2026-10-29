@@ -1,5 +1,6 @@
 // 变更标签页（specs/04、06 第 3 节）：变更树 + 提交面板 + 差异预览
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SplitView } from '../components/SplitView';
 import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
@@ -540,9 +541,12 @@ export function ChangesView({ repoId }: { repoId: string }) {
   if (status.isError) return <p className="error-text pad">{errorMessage(status.error)}</p>;
 
   return (
-    <div className="changes">
+    <>
+    <SplitView id="changes" className="changes" initialSizes={[42, 58]} minSizes={[280, 260]}>
       <div className="changes-left">
         <OperationBanner repoId={repoId} status={status.data} conflicts={conflictsCount} />
+        <SplitView id="commit" direction="column" initialSizes={[62, 38]} minSizes={[100, 200]}>
+        <div className="changes-files">
         <div className="toolbar small">
           <button className="icon-btn" title={`${t('changes.refresh')} (${isMac ? '⌘' : 'Ctrl+'}R)`} aria-label={t('changes.refresh')} onClick={() => invalidateRepo(repoId)}>
             <Icon name="refresh" />
@@ -701,6 +705,7 @@ export function ChangesView({ repoId }: { repoId: string }) {
           </div>
         </div>
 
+        </div>
         <div className="commit-panel">
           <div className="commit-options">
             <label className="check">
@@ -771,12 +776,14 @@ export function ChangesView({ repoId }: { repoId: string }) {
             </button>
           </div>
         </div>
+        </SplitView>
       </div>
       <div className="changes-right">
         <DiffViewer target={diffTarget} />
       </div>
-      {menu.element}
-    </div>
+    </SplitView>
+    {menu.element}
+    </>
   );
 }
 

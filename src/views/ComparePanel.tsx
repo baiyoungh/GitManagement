@@ -1,5 +1,6 @@
 // 比较两个分支/提交（B-06），或某个版本与工作区（D-06）
 import { useState } from 'react';
+import { SplitView } from '../components/SplitView';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
@@ -57,15 +58,17 @@ export function ComparePanel({ repoId, left, right }: { repoId: string; left: st
   if (q.isError) return <p className="error-text pad">{errorMessage(q.error)}</p>;
   const d = q.data!;
   return (
-    <div className="compare">
+    <SplitView id={right === null ? 'compare-worktree' : 'compare'} className="compare" direction="column" initialSizes={[30, 70]} minSizes={[90, 160]}>
       {right !== null && (
         <div className="compare-top">
+          <SplitView id="compare-commits" initialSizes={[50, 50]} minSizes={[100, 100]}>
           <CommitList title={t('compare.onlyIn', { name: right })} commits={d.onlyRight} />
           <CommitList title={t('compare.onlyIn', { name: left })} commits={d.onlyLeft} />
+          </SplitView>
           {d.truncated && <p className="warn-text small-text">{t('compare.truncated')}</p>}
         </div>
       )}
-      <div className="compare-files">
+      <SplitView id="compare-files" className="compare-files" initialSizes={[35, 65]} minSizes={[160, 200]}>
         <div className="commit-files">
           <h4>{t('compare.files', { count: d.files.length, left, right: rightLabel })}</h4>
           <ul>
@@ -83,7 +86,7 @@ export function ComparePanel({ repoId, left, right }: { repoId: string; left: st
           </ul>
         </div>
         <div className="compare-diff">{target ? <DiffViewer target={target} /> : <p className="muted pad">{t('diff.selectFile')}</p>}</div>
-      </div>
-    </div>
+      </SplitView>
+    </SplitView>
   );
 }

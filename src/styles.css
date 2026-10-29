@@ -297,7 +297,6 @@ textarea {
   width: 250px;
   min-width: 180px;
   max-width: 480px;
-  resize: horizontal;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -509,7 +508,6 @@ table.grid {
   width: 42%;
   min-width: 320px;
   max-width: 70%;
-  resize: horizontal;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -884,7 +882,6 @@ table.grid {
 .branches-left {
   width: 320px;
   min-width: 220px;
-  resize: horizontal;
   overflow: hidden;
   border-right: 1px solid var(--border);
   display: flex;
@@ -1468,7 +1465,7 @@ fieldset .field-row {
 }
 .merge-body {
   flex: 1;
-  display: grid;
+  display: flex;
   grid-template-columns: 1fr 1fr 1fr;
   min-height: 0;
 }
@@ -1953,11 +1950,10 @@ li.drop-before {
   flex-direction: column;
 }
 .compare-top {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  max-height: 30%;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
   padding-bottom: 6px;
 }
@@ -2039,6 +2035,90 @@ li.drop-before {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Shared pane sizing owns dimensions; pane contents keep their own scrolling. */
+.split-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.split-row { flex-direction: row; }
+.split-column { flex-direction: column; }
+.split-view.history-body { flex: 0 0 auto; height: calc(100vh - 200px); }
+.split-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.split-pane > :only-child {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+}
+.split-handle {
+  flex: 0 0 6px;
+  position: relative;
+  background: var(--bg-2);
+  touch-action: none;
+  outline: none;
+}
+.split-row > .split-handle { cursor: col-resize; }
+.split-column > .split-handle { cursor: row-resize; }
+.split-handle:hover, .split-handle:focus-visible, .split-handle.dragging { background: var(--accent); }
+html[data-resizing] *, html[data-resizing] { user-select: none !important; }
+html[data-resizing='row'] * { cursor: col-resize !important; }
+html[data-resizing='column'] * { cursor: row-resize !important; }
+.changes-files { display: flex; flex-direction: column; overflow: hidden; }
+.split-pane > .commit-panel { overflow: auto; }
+.split-pane .commit-message { flex: 1; min-height: 54px; resize: none; }
+.split-pane > .compare-commits { overflow: auto; padding: 0 8px; }
+.split-pane > .commit-files { width: 100%; }
+.branch-create-form { display: flex; flex-direction: column; gap: 10px; }
+.branch-popup-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.branch-popup-tools button { display: inline-flex; align-items: center; gap: 6px; }
+.branch-popup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: min(510px, calc(100vh - 200px));
+  min-height: 180px;
+  border: 1px solid var(--border);
+}
+.branch-popup-list, .branch-popup-actions { min-width: 0; overflow: auto; padding: 6px 0; }
+.branch-popup-list { border-right: 1px solid var(--border); }
+.branch-popup-list .branch-folder { justify-content: flex-start; }
+.branch-popup-list > input { width: calc(100% - 16px); margin: 2px 8px 8px; }
+.branch-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px 6px 22px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.branch-popup-row > svg { flex-shrink: 0; }
+.branch-popup-row.selected, .branch-popup-row.selected:hover { background: var(--selected); }
+.branch-popup-upstream { max-width: 30%; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); font-size: 11px; }
+.branch-popup-selection { display: flex; align-items: center; gap: 6px; padding: 6px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.branch-popup-selection strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branch-popup-actions > button { display: block; width: 100%; text-align: left; border: none; border-radius: 0; background: none; padding: 6px 10px; white-space: normal; overflow-wrap: anywhere; }
+.branch-popup-actions > button:focus-visible { outline: none; background: var(--selected); }
+@media (max-width: 640px) {
+  .branch-popup { grid-template-columns: minmax(0, 45fr) minmax(0, 55fr); }
+  .branch-popup-upstream { display: none; }
+  .branch-popup-row { padding-left: 8px; }
+  .branch-popup-selection > .mono { display: none; }
 }
 .blame {
   height: calc(100vh - 200px);

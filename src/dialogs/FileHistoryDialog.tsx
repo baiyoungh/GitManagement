@@ -6,6 +6,7 @@ import { api } from '../api';
 import type { BlameCommit, FileHistoryEntry } from '../api/types';
 import { useApp } from '../stores/appStore';
 import { Modal } from '../components/ui';
+import { SplitView } from '../components/SplitView';
 import { DiffViewer, type DiffTarget } from '../views/DiffViewer';
 import { dateTime, relativeTime } from '../lib/format';
 import { errorMessage } from '../lib/errors';
@@ -75,7 +76,7 @@ export function FileHistoryDialog({ repoId, path, mode: initial }: { repoId: str
         )}
       </div>
       {mode === 'history' ? (
-        <div className="history-body">
+        <SplitView id="file-history" className="history-body" initialSizes={[35, 65]} minSizes={[200, 240]}>
           <ul className="history-list" role="listbox" aria-label={t('history.history')}>
             {hist.isLoading && <li className="muted pad">{t('common.loading')}</li>}
             {hist.isError && <li className="error-text pad">{errorMessage(hist.error)}</li>}
@@ -107,7 +108,7 @@ export function FileHistoryDialog({ repoId, path, mode: initial }: { repoId: str
             )}
           </ul>
           <div className="history-diff">{target ? <DiffViewer target={target} /> : <p className="muted pad">{t('log.selectCommit')}</p>}</div>
-        </div>
+        </SplitView>
       ) : (
         <div className="blame mono">
           {blame.isLoading && <p className="muted pad">{t('common.loading')}</p>}
