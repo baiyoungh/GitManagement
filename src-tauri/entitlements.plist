@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened Runtime 权限（公证要求开启 Hardened Runtime）。
+     应用需要启动 git / ssh 等外部进程并访问钥匙串，这些不需要额外权限；
+     未开启 App Sandbox，因为需要读写用户任意目录下的仓库。 -->
+<plist version="1.0">
+<dict>
+  <!-- WebView 的 JIT -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

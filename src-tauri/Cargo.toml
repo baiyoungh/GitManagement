@@ -1,0 +1,36 @@
+[package]
+name = "gitmanagement"
+version = "0.1.0"
+description = "GitManagement - multi-repository Git desktop client"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "gitmanagement_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+# tauri / tauri-plugin-dialog 的 major.minor 必须与 package.json 中 @tauri-apps/api、@tauri-apps/plugin-dialog 一致，
+# 否则 tauri CLI 会报 "version mismatched Tauri packages"
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+# 必须启用平台原生后端，否则 keyring 3 默认使用内存 mock 存储
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native"] }
+notify-debouncer-mini = "0.4"
+trash = "5.1"
+uuid = { version = "1.10", features = ["v4"] }
+regex = "1.11"
+tempfile = "3.13"
+similar = "2.7"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
