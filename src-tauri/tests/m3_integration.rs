@@ -25,6 +25,9 @@ fn init_repo(r: &GitRunner, dir: &Path) {
     git(r, dir, &["config", "user.name", "Test"]);
     git(r, dir, &["config", "user.email", "t@example.com"]);
     git(r, dir, &["config", "commit.gpgsign", "false"]);
+    // Tests for CRLF conversion override these fixture defaults explicitly.
+    git(r, dir, &["config", "core.autocrlf", "false"]);
+    git(r, dir, &["config", "core.eol", "lf"]);
 }
 
 fn commit_all(r: &GitRunner, dir: &Path, msg: &str) {
@@ -165,6 +168,42 @@ fn stash_lifecycle() {
     assert!(dir.join("u.txt").exists());
     assert!(stash::list(&repo).unwrap().is_empty());
     assert_eq!(stash::drop(&repo, &all_hash).unwrap_err().code, "stash.notFound");
+}
+
+#[test]
+fn stash_selected_paths_are_literal() {
+    let r = runner();
+    let d = tempfile::tempdir().unwrap();
+    let dir = d.path().join("stash paths");
+    init_repo(&r, &dir);
+    fs::write(dir.join("a[1].txt"), "old\n").unwrap();
+    fs::write(dir.join("a1.txt"), "old\n").unwrap();
+    commit_all(&r, &dir, "init");
+    fs::write(dir.join("a[1].txt"), "selected\n").unwrap();
+    fs::write(dir.join("a1.txt"), "unselected\n").unwrap();
+    fs::write(dir.join("u[1].txt"), "selected untracked\n").unwrap();
+    fs::write(dir.join("u1.txt"), "unselected untracked\n").unwrap();
+    let repo = Repo::new(&r, &dir);
+
+    stash::create(&repo, &StashCreateReq {
+        paths: vec!["a[1].txt".into(), "u[1].txt".into()],
+        include_untracked: true,
+        ..Default::default()
+    }).unwrap();
+    assert_eq!(fs::read_to_string(dir.join("a[1].txt")).unwrap(), "old\n");
+    assert_eq!(fs::read_to_string(dir.join("a1.txt")).unwrap(), "unselected\n");
+    assert!(!dir.join("u[1].txt").exists());
+    assert_eq!(fs::read_to_string(dir.join("u1.txt")).unwrap(), "unselected untracked\n");
+
+    let entries = stash::list(&repo).unwrap();
+    assert_eq!(entries.len(), 1);
+    let result = stash::apply(&repo, &entries[0].hash, true, false).unwrap();
+    assert!(!result.conflicts);
+    assert_eq!(fs::read_to_string(dir.join("a[1].txt")).unwrap(), "selected\n");
+    assert_eq!(fs::read_to_string(dir.join("u[1].txt")).unwrap(), "selected untracked\n");
+    assert_eq!(fs::read_to_string(dir.join("a1.txt")).unwrap(), "unselected\n");
+    assert_eq!(fs::read_to_string(dir.join("u1.txt")).unwrap(), "unselected untracked\n");
+    assert!(stash::list(&repo).unwrap().is_empty());
 }
 
 #[test]

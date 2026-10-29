@@ -29,6 +29,9 @@ fn setup(r: &GitRunner) -> tempfile::TempDir {
     git(r, &dir, &["config", "user.name", "Test"]);
     git(r, &dir, &["config", "user.email", "test@example.com"]);
     git(r, &dir, &["config", "commit.gpgsign", "false"]);
+    // Keep fixture contents independent of the host's Git line-ending defaults.
+    git(r, &dir, &["config", "core.autocrlf", "false"]);
+    git(r, &dir, &["config", "core.eol", "lf"]);
     fs::write(dir.join("a.txt"), "a\n").unwrap();
     fs::write(dir.join("文件 b.txt"), "b\n").unwrap();
     fs::write(dir.join("c.txt"), "c\n").unwrap();
