@@ -106,6 +106,6 @@ M2 集成测试覆盖 specs/08 的验收项：
 ## 已知限制
 
 - `pnpm-lock.yaml` 需首次 `pnpm install` 后生成并提交，CI 使用 `--frozen-lockfile`。`src-tauri/Cargo.lock` 已提交（tauri 2.12.5）。
-- 签名与公证：CI 已配置，在仓库 secrets 中填入证书后自动签名（macOS Developer ID + notarytool 公证，Windows Authenticode），未填时产出未签名包。需要的 secrets 列表见 `.github/workflows/build.yml` 顶部注释。证书需要自行申请（Apple Developer Program；Windows 推荐 EV 或云端签名证书以避免 SmartScreen 信誉积累期）。
+- 发布：main 分支推送和 PR 只运行测试；推送 `v*` 标签（例如 `git tag -a v0.1.0 -m "Release v0.1.0"` 后 `git push origin v0.1.0`）时，测试通过后构建 macOS 通用 DMG 和 Windows NSIS 安装包，并上传至对应的 GitHub Release。签名与公证：在仓库 secrets 中填入证书后自动签名（macOS Developer ID + notarytool 公证，Windows Authenticode），未填时产出未签名包。需要的 secrets 列表见 `.github/workflows/build.yml` 顶部注释。证书需要自行申请（Apple Developer Program；Windows 推荐 EV 或云端签名证书以避免 SmartScreen 信誉积累期）。
 - 快捷键为固定的 JetBrains 键位（设置 › 快捷键 可查看），暂不支持自定义。
 - 部分提交的选择只在本次运行中保留，重启应用后恢复为整文件勾选。
