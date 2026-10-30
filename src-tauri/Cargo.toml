@@ -1,6 +1,6 @@
 [package]
 name = "gitmanagement"
-version = "0.1.1"
+version = "0.1.2"
 description = "GitManagement - multi-repository Git desktop client"
 edition = "2021"
 rust-version = "1.77"
@@ -28,6 +28,8 @@ uuid = { version = "1.10", features = ["v4"] }
 regex = "1.11"
 tempfile = "3.13"
 similar = "2.7"
+portable-pty = "0.9"
+sha2 = "0.10"
 
 [profile.release]
 codegen-units = 1

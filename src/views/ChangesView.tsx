@@ -491,6 +491,7 @@ export function ChangesView({ repoId }: { repoId: string }) {
   // ---------- 快捷键：⌘K 提交、⌘D 差异、⌘⌥Z 回滚、⌘R 刷新 ----------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest('.terminal-host')) return;
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod) return;
       const k = e.key.toLowerCase();

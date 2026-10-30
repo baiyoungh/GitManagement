@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type Tab = 'changes' | 'log' | 'branches' | 'mapping' | 'stash';
+export type Tab = 'changes' | 'files' | 'log' | 'branches' | 'mapping' | 'stash';
 
 export type DialogState =
   | { type: 'addRepo' }
@@ -12,7 +12,7 @@ export type DialogState =
   | { type: 'upstream'; repoId: string; name: string }
   | { type: 'deleteBranch'; repoId: string; name: string; upstream?: { remote: string; branch: string } | null }
   // M3
-  | { type: 'scan' }
+  | { type: 'scan'; root?: string; groupId?: string | null }
   | { type: 'stashCreate'; repoId: string; paths: string[] }
   | { type: 'tag'; repoId: string; target: string; label?: string }
   | { type: 'compare'; repoId: string; left: string; right: string | null }
@@ -74,7 +74,7 @@ interface AppState {
   /** 总览按分组筛选：undefined = 全部，null = 未分组 */
   overviewGroup: string | null | undefined;
   bottomOpen: boolean;
-  bottomTab: 'tasks' | 'log';
+  bottomTab: 'tasks' | 'log' | 'terminal';
   settings: Record<string, string>;
   selectRepo: (id: string | null) => void;
   setTab: (tab: Tab) => void;
@@ -89,7 +89,7 @@ interface AppState {
   showOverview: (group: string | null | undefined) => void;
   toast: (kind: Toast['kind'], message: string, detail?: string) => void;
   dismissToast: (id: number) => void;
-  setBottom: (open: boolean, tab?: 'tasks' | 'log') => void;
+  setBottom: (open: boolean, tab?: 'tasks' | 'log' | 'terminal') => void;
   setSettings: (s: Record<string, string>) => void;
   patchSetting: (key: string, value: string) => void;
 }

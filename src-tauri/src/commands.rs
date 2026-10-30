@@ -38,6 +38,9 @@ pub struct AppState {
     pub git: Arc<GitRunner>,
     pub tasks: Arc<TaskManager>,
     pub watcher: Arc<WatchManager>,
+    pub terminals: crate::terminal::TerminalManager,
+    pub allow_exit: Arc<std::sync::atomic::AtomicBool>,
+    pub unsaved_files: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -77,6 +80,70 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send + '
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| AppError::internal(e.to_string()))?
+}
+
+#[tauri::command]
+pub fn app_exit(app: AppHandle, state: State<'_, AppState>) {
+    state.allow_exit.store(true, std::sync::atomic::Ordering::SeqCst);
+    app.exit(0);
+}
+
+#[tauri::command]
+pub fn app_set_dirty(state: State<'_, AppState>, dirty: bool) {
+    state.unsaved_files.store(dirty, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub async fn files_list(state: State<'_, AppState>, repo_id: String, path: String) -> AppResult<crate::files::Directory> {
+    let root = state.repo_path(&repo_id)?;
+    blocking(move || crate::files::list(&root, &path)).await
+}
+
+#[tauri::command]
+pub async fn files_read(state: State<'_, AppState>, repo_id: String, path: String) -> AppResult<crate::files::Document> {
+    let root = state.repo_path(&repo_id)?;
+    blocking(move || crate::files::read(&root, &path)).await
+}
+
+#[tauri::command]
+pub async fn files_save(state: State<'_, AppState>, repo_id: String, path: String, revision: String, text: String) -> AppResult<crate::files::Document> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::save(&root, &path, &revision, &text)
+    }).await
+}
+
+#[tauri::command]
+pub async fn terminal_open(state: State<'_, AppState>, repo_id: String, id: String, cols: u16, rows: u16, on_event: tauri::ipc::Channel<crate::terminal::TerminalEvent>) -> AppResult<()> {
+    let root = state.repo_path(&repo_id)?;
+    let manager = state.terminals.clone();
+    blocking(move || manager.open(id, &root, cols, rows, move |event| on_event.send(event).is_ok())).await
+}
+
+#[tauri::command]
+pub async fn terminal_input(state: State<'_, AppState>, id: String, data: String) -> AppResult<()> {
+    let manager = state.terminals.clone();
+    blocking(move || manager.input(&id, &data)).await
+}
+
+#[tauri::command]
+pub async fn terminal_resize(state: State<'_, AppState>, id: String, cols: u16, rows: u16) -> AppResult<()> {
+    let manager = state.terminals.clone();
+    blocking(move || manager.resize(&id, cols, rows)).await
+}
+
+#[tauri::command]
+pub async fn terminal_close(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let manager = state.terminals.clone();
+    blocking(move || manager.close(&id)).await
+}
+
+#[tauri::command]
+pub fn terminal_ack(state: State<'_, AppState>, id: String, count: usize) {
+    state.terminals.ack(&id, count);
 }
 
 fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {

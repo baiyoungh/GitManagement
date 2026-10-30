@@ -1,12 +1,30 @@
 // typed invoke 封装。命令名与参数名必须与 src-tauri/src/commands.rs 保持一致
 // （Tauri 会把 Rust 的 snake_case 参数映射为 JS 侧 camelCase）。
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import type * as T from './types';
 
 const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, args);
 
 export const api = {
+  files: {
+    list: (repoId: string, path: string) => call<T.DirectoryListing>('files_list', { repoId, path }),
+    read: (repoId: string, path: string) => call<T.FileDocument>('files_read', { repoId, path }),
+    save: (repoId: string, path: string, revision: string, text: string) => call<T.FileDocument>('files_save', { repoId, path, revision, text }),
+  },
+  terminal: {
+    ack: (id: string, count: number) => call<void>('terminal_ack', { id, count }),
+    open: (repoId: string, id: string, cols: number, rows: number, onEvent: (event: T.TerminalEvent) => void) => {
+      const channel = new Channel<T.TerminalEvent>();
+      channel.onmessage = onEvent;
+      return call<void>('terminal_open', { repoId, id, cols, rows, onEvent: channel });
+    },
+    input: (id: string, data: string) => call<void>('terminal_input', { id, data }),
+    resize: (id: string, cols: number, rows: number) => call<void>('terminal_resize', { id, cols, rows }),
+    close: (id: string) => call<void>('terminal_close', { id }),
+  },
   app: {
+    setDirty: (dirty: boolean) => call<void>('app_set_dirty', { dirty }),
+    exit: () => call<void>('app_exit'),
     info: () => call<T.AppInfo>('app_info'),
     setGitPath: (path: string | null) => call<T.GitInfo>('git_set_path', { path }),
   },

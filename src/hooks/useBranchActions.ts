@@ -39,7 +39,10 @@ export function useBranchActions(repoId: string, branches: BranchInfo[], onCompa
     try {
       const result = await api.branch.integrate(repoId, b.fullRef, mode);
       toast(result.conflicts ? 'error' : 'success', t(result.conflicts ? 'integrate.conflicts' : 'integrate.done'));
-      if (result.conflicts) useApp.getState().setTab('changes');
+      if (result.conflicts) {
+        useApp.getState().selectRepo(repoId);
+        useApp.getState().setTab('changes');
+      }
     } catch (e) { reportError(e); }
     finally { refresh(); }
   };
@@ -74,7 +77,7 @@ export function useBranchActions(repoId: string, branches: BranchInfo[], onCompa
     ...(b.kind === 'local' ? [
       { label: t('branches.push'), onClick: () => openPush(repoId, b.name) },
       { label: t('branches.syncByRule'), onClick: () => openSyncPreview(repoId, [b.name], null) },
-      { label: t('branches.editRule'), onClick: () => useApp.getState().setTab('mapping') },
+      { label: t('branches.editRule'), onClick: () => { useApp.getState().selectRepo(repoId); useApp.getState().setTab('mapping'); } },
       { label: t('branches.setUpstream'), onClick: () => openDialog({ type: 'upstream', repoId, name: b.name }) },
       {
         label: t('branches.unsetUpstream'), disabled: !b.upstream,

@@ -1,13 +1,17 @@
 // 分支弹窗（⌘⇧` / Ctrl+Shift+`，specs/06 第 4 节）与切换仓库（⌘P / Ctrl+P）
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { invalidateRepo, useBranches, useRepos } from '../api/queries';
+import { invalidateRepo, keys, queryClient, reportError, useBranches, useRepos, useSummary } from '../api/queries';
+import { api } from '../api';
+import type { RepoView } from '../api/types';
 import { useApp } from '../stores/appStore';
 import { AheadBehind, Modal } from '../components/ui';
 import { useBranchActions } from '../hooks/useBranchActions';
 import { Icon } from '../components/Icon';
 import { checkoutBranch } from '../lib/actions';
 import { shortPath } from '../lib/format';
+import { insideRepo, sameRepoPath } from '../lib/repoPaths';
 
 interface Item {
   key: string;
@@ -75,7 +79,73 @@ function Picker({ title, placeholder, items }: { title: string; placeholder: str
   );
 }
 
+function RepositoryHead({ repo }: { repo: RepoView }) {
+  const summary = useSummary(repo.id, !repo.missing);
+  return <span className="muted mono small-text">{summary.data?.branch ?? summary.data?.headShort ?? ''}</span>;
+}
+
 export function BranchPopup({ repoId }: { repoId: string }) {
+  const { t } = useTranslation();
+  const repos = useRepos();
+  const all = repos.data ?? [];
+  const current = all.find((r) => r.id === repoId);
+  const root = current && (all.filter((r) => insideRepo(current.path, r.path)).sort((a, b) => a.path.length - b.path.length)[0] ?? current);
+  const scan = useQuery({
+    queryKey: ['repo', root?.id ?? repoId, 'nested', root?.path],
+    queryFn: () => api.scan.run(root!.path, 8),
+    enabled: !!root && !root.missing,
+    staleTime: 30_000,
+  });
+  const [activeId, setActiveId] = useState(repoId);
+  const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState('');
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const activeRepo = all.find((r) => r.id === activeId);
+  const family = root ? [
+    { path: root.path, name: root.name },
+    ...all.filter((r) => insideRepo(r.path, root.path)),
+    ...(scan.data?.repos ?? []).filter((r) => insideRepo(r.path, root.path) && !all.some((known) => sameRepoPath(known.path, r.path))),
+  ] : [];
+  const withFamily = family.length > 1;
+  const close = useApp((s) => s.closeDialog);
+  const select = async (path: string) => {
+    const existing = all.find((r) => sameRepoPath(r.path, path));
+    if (existing) { setActiveId(existing.id); return; }
+    setAdding(true);
+    try {
+      const added = await api.repo.add(path, false);
+      await queryClient.invalidateQueries({ queryKey: keys.repos });
+      if (mounted.current) setActiveId(added.id);
+    } catch (e) { reportError(e); }
+    finally { if (mounted.current) setAdding(false); }
+  };
+  return (
+    <Modal title={`${t('branchPopup.title')}${activeRepo ? ` · ${activeRepo.name}` : ''}`} onClose={close} width={withFamily ? 1120 : 860}>
+      {scan.isFetching && <p className="muted small-text" role="status">{t('branchPopup.discovering')}</p>}
+      {scan.isError && <div className="action-row"><span className="error-text">{t('branchPopup.discoverFailed')}</span><button onClick={() => void scan.refetch()}>{t('common.retry')}</button></div>}
+      {scan.data?.truncated && <p className="warn-text">{t('scan.truncated')}</p>}
+      <div className={withFamily ? 'branch-family' : undefined}>
+        {withFamily && <nav className="branch-family-list" aria-label={t('branchPopup.repositories')}>
+          <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('sidebar.search')} aria-label={t('sidebar.search')} />
+          {family.filter((r) => `${r.name} ${r.path}`.toLowerCase().includes(filter.trim().toLowerCase())).map((r) => {
+            const registered = all.find((known) => sameRepoPath(known.path, r.path));
+            return <button key={r.path} className={`branch-family-row ${registered?.id === activeId ? 'selected' : ''}`} disabled={adding || registered?.missing}
+              aria-pressed={registered?.id === activeId} title={r.path} onClick={() => void select(r.path)}>
+              <Icon name="folder" size={14} />
+              <span className="branch-family-name"><strong>{r.name}</strong><span className="muted small-text">{shortPath(r.path)}</span></span>
+              {registered ? <RepositoryHead repo={registered} /> : <Icon name="plus" size={13} title={t('branchPopup.addAndManage')} />}
+              <Icon name="chevronRight" size={13} />
+            </button>;
+          })}
+        </nav>}
+        <div className="branch-family-content"><RepoBranchPanel key={activeId} repoId={activeId} /></div>
+      </div>
+    </Modal>
+  );
+}
+
+function RepoBranchPanel({ repoId }: { repoId: string }) {
   const { t } = useTranslation();
   const branches = useBranches(repoId);
   const openDialog = useApp((s) => s.openDialog);
@@ -109,7 +179,7 @@ export function BranchPopup({ repoId }: { repoId: string }) {
     }
   };
   return (
-    <Modal title={t('branchPopup.title')} onClose={close} width={860}>
+    <>
       <div className="branch-popup-tools">
         <button onClick={() => openDialog({ type: 'createBranch', repoId })}><Icon name="plus" size={14} />{t('branches.newBranch')}</button>
         <button onClick={async () => {
@@ -167,7 +237,7 @@ export function BranchPopup({ repoId }: { repoId: string }) {
           </>}
         </div>
       </div>
-    </Modal>
+    </>
   );
 }
 

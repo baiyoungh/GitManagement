@@ -1,29 +1,39 @@
 {
   "name": "gitmanagement",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:ui": "node scripts/smoke-workspace.cjs",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "icons": "tauri icon app-icon.svg"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
     "@codemirror/language": "6.10.3",
     "@codemirror/language-data": "6.5.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
     "@lezer/highlight": "1.2.1",
     "@tanstack/react-query": "5.59.16",
     "@tanstack/react-virtual": "3.10.8",
     "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-dialog": "2.8.4",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "codemirror": "6.0.2",
     "i18next": "23.16.4",
+    "lucide-react": "1.63.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-i18next": "15.1.0",
@@ -33,11 +43,12 @@
     "@tauri-apps/cli": "2.12.4",
     "@testing-library/dom": "10.4.0",
     "@testing-library/react": "16.0.1",
-    "@types/react": "18.3.12",
     "@types/node": "20.17.6",
+    "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "4.3.3",
     "jsdom": "25.0.1",
+    "playwright": "1.64.1",
     "typescript": "5.6.3",
     "vite": "5.4.10",
     "vitest": "2.1.4"

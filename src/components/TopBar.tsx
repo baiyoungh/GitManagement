@@ -7,6 +7,7 @@ import { Icon } from './Icon';
 import { openPush, startFetch, startPull } from '../lib/actions';
 import { openSyncPreview } from '../dialogs/SyncDialog';
 import { isMac } from '../lib/format';
+import { Terminal } from 'lucide-react';
 
 export function TopBar() {
   const { t } = useTranslation();
@@ -31,7 +32,9 @@ export function TopBar() {
   return (
     <header className="topbar">
       <span className="brand">GitManagement</span>
-      <span className="topbar-repo">{repo ? repo.name : t('top.noRepo')}</span>
+      <button className="topbar-repo repo-switcher-button" onClick={() => openDialog({ type: 'repoSwitcher' })} title={t('repoSwitcher.title')}>
+        <Icon name="folder" size={14} />{repo ? repo.name : t('top.noRepo')}<Icon name="chevronDown" size={12} />
+      </button>
       {repo && s && (
         <button className="branch-chip" onClick={() => repoId && openDialog({ type: 'branchPopup', repoId })} onDoubleClick={() => setTab('branches')} title={`${t('nav.branches')} (${mod}⇧\`)`}>
           <Icon name="branch" size={14} /> {branchLabel} <AheadBehind ahead={s.ahead} behind={s.behind} />
@@ -56,6 +59,9 @@ export function TopBar() {
         </button>
         <button className="icon-btn" onClick={() => openDialog({ type: 'settings' })} title={t('top.settings')} aria-label={t('top.settings')}>
           <Icon name="settings" size={18} />
+        </button>
+        <button className="icon-btn" disabled={disabled} onClick={() => useApp.getState().setBottom(true, 'terminal')} title={t('terminal.title')} aria-label={t('terminal.title')}>
+          <Terminal size={18} />
         </button>
       </div>
     </header>

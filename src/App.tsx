@@ -4,6 +4,7 @@ import { api } from './api';
 import { reportError, useAppInfo, useRepos } from './api/queries';
 import { useApp, type Tab } from './stores/appStore';
 import { useBackendEvents } from './hooks/useBackendEvents';
+import { useCloseGuard } from './hooks/useCloseGuard';
 import { detectSystemLanguage, setLanguage } from './i18n';
 import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
@@ -13,6 +14,7 @@ import { ConfirmHost, Toasts } from './components/ui';
 import { useStashes } from './api/queries';
 import { Overview } from './views/Overview';
 import { ChangesView } from './views/ChangesView';
+import { FilesView } from './views/FilesView';
 import { BranchesView } from './views/BranchesView';
 import { LogView } from './views/LogView';
 import { MappingView } from './views/MappingView';
@@ -32,7 +34,7 @@ import { PromptHost } from './components/ui';
 import { isMac } from './lib/format';
 import { openPush, startPull } from './lib/actions';
 
-const TABS: Tab[] = ['changes', 'log', 'branches', 'mapping', 'stash'];
+const TABS: Tab[] = ['changes', 'files', 'log', 'branches', 'mapping', 'stash'];
 
 function Dialogs() {
   const d = useApp((s) => s.dialog);
@@ -55,7 +57,7 @@ function Dialogs() {
     case 'deleteBranch':
       return <DeleteBranchDialog repoId={d.repoId} name={d.name} upstream={d.upstream} />;
     case 'scan':
-      return <ScanDialog />;
+      return <ScanDialog initialRoot={d.root} initialGroup={d.groupId} />;
     case 'stashCreate':
       return <StashCreateDialog repoId={d.repoId} paths={d.paths} />;
     case 'tag':
@@ -134,6 +136,7 @@ export function App() {
   const repo = repos.data?.find((r) => r.id === repoId);
 
   useBackendEvents();
+  useCloseGuard();
   useTheme(settings.theme);
   useAppearance(settings);
   const stashes = useStashes(repo && !repo.missing ? repo.id : null);
@@ -165,6 +168,7 @@ export function App() {
   // 全局快捷键（specs/06 第 9 节）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest('.cm-editor, .terminal-host')) return;
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod || useApp.getState().dialog || useApp.getState().confirm || useApp.getState().promptReq) return;
       const k = e.key.toLowerCase();
@@ -230,6 +234,7 @@ export function App() {
               </nav>
               <div className="tab-content">
                 {tab === 'changes' && <ChangesView key={repo.id} repoId={repo.id} />}
+                {tab === 'files' && <FilesView key={repo.id} repoId={repo.id} />}
                 {tab === 'branches' && <BranchesView key={repo.id} repoId={repo.id} />}
                 {tab === 'log' && <LogView key={repo.id} repoId={repo.id} />}
                 {tab === 'mapping' && <MappingView key={repo.id} repoId={repo.id} />}

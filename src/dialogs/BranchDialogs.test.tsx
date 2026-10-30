@@ -16,6 +16,7 @@ const branch = (name: string, remote = false): BranchInfo => ({
 });
 
 beforeEach(() => {
+  vi.spyOn(api.repo, 'list').mockResolvedValue([]);
   vi.spyOn(api.branch, 'list').mockResolvedValue([branch('main'), branch('feature'), branch('origin/prod', true)]);
   vi.spyOn(api.remote, 'list').mockResolvedValue([]);
   vi.spyOn(api.status, 'get').mockResolvedValue({ branch: { head: 'main', oid: 'a'.repeat(40) } } as Awaited<ReturnType<typeof api.status.get>>);

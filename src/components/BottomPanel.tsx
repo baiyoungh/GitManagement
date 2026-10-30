@@ -7,6 +7,7 @@ import { useTasks } from '../stores/taskStore';
 import { taskTitle } from '../lib/tasks';
 import { errorMessage } from '../lib/errors';
 import { Icon } from './Icon';
+import { TerminalPanel } from './TerminalPanel';
 
 export function BottomPanel() {
   const { t } = useTranslation();
@@ -34,11 +35,15 @@ export function BottomPanel() {
         <button className={tab === 'log' && open ? 'active' : ''} onClick={() => setBottom(!(open && tab === 'log'), 'log')}>
           {t('tasks.log')}
         </button>
+        <button className={tab === 'terminal' && open ? 'active' : ''} onClick={() => setBottom(!(open && tab === 'terminal'), 'terminal')}>
+          {t('terminal.title')}
+        </button>
         <span className="bottom-summary inline-icon">{summary && <Icon name="refresh" size={13} className="spin" />}{summary}</span>
         <button className="icon-btn" onClick={() => setBottom(!open)} aria-label={open ? t('common.collapse') : t('common.expand')} title={open ? t('common.collapse') : t('common.expand')}>
           <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} />
         </button>
       </div>
+      <TerminalPanel visible={open && tab === 'terminal'} />
       {open && tab === 'tasks' && (
         <div className="bottom-content">
           <div className="bottom-tools">
