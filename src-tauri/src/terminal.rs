@@ -1,5 +1,9 @@
 use crate::error::{AppError, AppResult};
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+#[cfg(not(windows))]
+use portable_pty::ChildKiller;
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, BorrowedHandle, OwnedHandle};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -23,8 +27,35 @@ pub enum TerminalEvent {
 struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
+    #[cfg(not(windows))]
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    #[cfg(windows)]
+    killer: Mutex<OwnedHandle>,
     flow: Arc<OutputFlow>,
+}
+
+impl Session {
+    fn kill(&self) -> std::io::Result<()> {
+        let mut killer = self.killer.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(not(windows))]
+        return killer.kill();
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Foundation::STILL_ACTIVE;
+            use windows_sys::Win32::System::Threading::{GetExitCodeProcess, TerminateProcess};
+            // portable-pty 0.9's cloned Windows killer reverses TerminateProcess's result.
+            let handle = killer.as_raw_handle();
+            if unsafe { TerminateProcess(handle, 1) } != 0 {
+                return Ok(());
+            }
+            let error = std::io::Error::last_os_error();
+            let mut code = 0;
+            if unsafe { GetExitCodeProcess(handle, &mut code) } != 0 && code != STILL_ACTIVE as u32 {
+                return Ok(());
+            }
+            Err(error)
+        }
+    }
 }
 
 impl Drop for Session {
@@ -87,12 +118,20 @@ impl TerminalManager {
         let mut reader = pair.master.try_clone_reader().map_err(error)?;
         let writer = pair.master.take_writer().map_err(error)?;
         let mut child = pair.slave.spawn_command(command).map_err(error)?;
+        #[cfg(not(windows))]
+        let killer = child.clone_killer();
+        #[cfg(windows)]
+        let killer = {
+            let handle = child.as_raw_handle().ok_or_else(|| error("Missing process handle"))?;
+            // The child owns this handle; retain an independent handle for session closure.
+            unsafe { BorrowedHandle::borrow_raw(handle) }.try_clone_to_owned().map_err(error)?
+        };
         drop(pair.slave);
         let flow = Arc::new(OutputFlow::default());
         let session = Arc::new(Session {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
-            killer: Mutex::new(child.clone_killer()),
+            killer: Mutex::new(killer),
             flow: flow.clone(),
         });
         sessions.insert(id.clone(), session.clone());
@@ -194,12 +233,7 @@ impl TerminalManager {
             .unwrap_or_else(|e| e.into_inner())
             .remove(id)
         {
-            session
-                .killer
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .kill()
-                .map_err(error)?;
+            session.kill().map_err(error)?;
         }
         Ok(())
     }
@@ -208,11 +242,7 @@ impl TerminalManager {
         let sessions =
             std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for session in sessions.into_values() {
-            let _ = session
-                .killer
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .kill();
+            let _ = session.kill();
         }
     }
 }
