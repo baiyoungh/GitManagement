@@ -8,8 +8,13 @@ import { useApp } from '../stores/appStore';
 import { TerminalPanel } from './TerminalPanel';
 
 vi.mock('@xterm/xterm', () => ({ Terminal: class {
+  input?: (data: string) => void;
   cols = 80; rows = 24; options = {}; loadAddon() {} open() {} dispose() {} clear() {} focus() {}
-  onData() { return { dispose() {} }; } write(_data: unknown, done: () => void) { done(); }
+  onData(callback: (data: string) => void) { this.input = callback; return { dispose() {} }; }
+  write(data: Uint8Array, done: () => void) {
+    if (new TextDecoder().decode(data) === '\x1b[6n') this.input?.('\x1b[1;1R');
+    done();
+  }
 } }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit() {} } }));
 
@@ -24,12 +29,28 @@ beforeEach(() => {
   vi.spyOn(api.terminal, 'open').mockResolvedValue();
   vi.spyOn(api.terminal, 'close').mockResolvedValue();
   vi.spyOn(api.terminal, 'resize').mockResolvedValue();
+  vi.spyOn(api.terminal, 'input').mockResolvedValue();
+  vi.spyOn(api.terminal, 'ack').mockResolvedValue();
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function panel(visible: boolean) { return <QueryClientProvider client={queryClient}><TerminalPanel visible={visible} /></QueryClientProvider>; }
 
 describe('terminal sessions', () => {
+  it('answers cursor queries while the session open call is still pending', async () => {
+    let resolve!: () => void;
+    vi.mocked(api.terminal.open).mockImplementation((_repoId, _id, _cols, _rows, onEvent) => {
+      onEvent({ type: 'data', data: [27, 91, 54, 110] });
+      return new Promise<void>((done) => { resolve = done; });
+    });
+    const view = render(panel(true));
+    await waitFor(() => expect(api.terminal.open).toHaveBeenCalledTimes(1));
+    const id = vi.mocked(api.terminal.open).mock.calls[0][1];
+    await waitFor(() => expect(api.terminal.input).toHaveBeenCalledWith(id, '\x1b[1;1R'));
+    await act(async () => resolve());
+    view.unmount();
+    await waitFor(() => expect(api.terminal.close).toHaveBeenCalledWith(id));
+  });
   it('opens for the selected repository, retains sessions while hidden and isolates repositories', async () => {
     const view = render(panel(true));
     await waitFor(() => expect(api.terminal.open).toHaveBeenCalledTimes(1));

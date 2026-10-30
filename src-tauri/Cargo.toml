@@ -1,6 +1,6 @@
 [package]
 name = "gitmanagement"
-version = "0.1.2"
+version = "0.1.3"
 description = "GitManagement - multi-repository Git desktop client"
 edition = "2021"
 rust-version = "1.77"

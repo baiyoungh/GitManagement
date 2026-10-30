@@ -46,7 +46,8 @@ function TerminalPane({ session, active, path, onClose }: { session: Session; ac
     const observer = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(resize); });
     observer.observe(element);
     const input = term.onData((data) => {
-      if (!opened || ended) return;
+      // Backend output can request a cursor report before the open call resolves.
+      if (disposed || ended) return;
       // Serialize writes so rapid keystrokes/paste retain their order.
       for (const chunk of terminalInputChunks(data)) {
         inputQueue = inputQueue.then(() => disposed || ended ? undefined : api.terminal.input(id, chunk)).catch((e) => { if (!disposed) reportError(e); });

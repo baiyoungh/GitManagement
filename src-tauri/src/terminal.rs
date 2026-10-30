@@ -235,6 +235,28 @@ mod tests {
             })
             .unwrap();
         manager.resize(&id, 110, 30).unwrap();
+        #[cfg(windows)]
+        {
+            // ConPTY inherits the cursor and waits for the terminal's position report.
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut startup = Vec::new();
+            while Instant::now() < deadline {
+                if let Ok(TerminalEvent::Data { data }) =
+                    rx.recv_timeout(Duration::from_millis(100))
+                {
+                    manager.ack(&id, data.len());
+                    startup.extend(data);
+                    if startup.windows(4).any(|bytes| bytes == b"\x1b[6n") {
+                        manager.input(&id, "\x1b[1;1R").unwrap();
+                        break;
+                    }
+                }
+            }
+            assert!(
+                startup.windows(4).any(|bytes| bytes == b"\x1b[6n"),
+                "Missing ConPTY cursor query: {startup:?}"
+            );
+        }
         #[cfg(not(windows))]
         manager.input(&id, "printf '__GM_CWD__'; pwd\r").unwrap();
         #[cfg(windows)]
@@ -244,6 +266,7 @@ mod tests {
         let mut output = String::new();
         while Instant::now() < deadline {
             if let Ok(TerminalEvent::Data { data }) = rx.recv_timeout(Duration::from_millis(100)) {
+                manager.ack(&id, data.len());
                 output.push_str(&String::from_utf8_lossy(&data));
                 if output.contains("__GM_CWD__") && output.contains(expected.as_ref()) {
                     break;
