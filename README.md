@@ -2,7 +2,7 @@
 
 跨平台桌面 Git 管理工具，Tauri 2 + React + TypeScript。需求见上级目录 `specs/`。
 
-当前版本 0.1.2，已实现 M0–M3 的主要功能，以及可调布局、指定源分支建分支、文件浏览编辑与内置终端。M4 增强与托管平台集成尚未开始。实际实施、验收和待办状态见 [实施清单](docs/implementation-status.md)，本次变更见 [v0.1.2 发布说明](docs/releases/v0.1.2.md)。
+当前版本 0.1.4，已实现 M0–M3 的主要功能，以及可调布局、指定源分支建分支、文件浏览编辑与内置终端。M4 增强与托管平台集成尚未开始。实际实施、验收和待办状态见 [实施清单](docs/implementation-status.md)，本次变更见 [v0.1.4 发布说明](docs/releases/v0.1.4.md)。
 
 体验改进：修复主按钮悬浮对比度；仓库显示名称可编辑，保留实际文件夹信息。目录扫描按指定深度继续深入仓库内部；分支弹窗可发现并分别管理嵌套仓库、已检出的子模块及 worktree。子模块初始化/更新尚未实现。
 
@@ -24,6 +24,7 @@ pnpm tauri dev      # 开发运行：会自动弹出 GitManagement 窗口
 pnpm typecheck      # 前端类型检查
 pnpm test           # 前端单测（vitest）
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust 单测 + 集成测试（需要本机 git）
+pnpm release:check  # 发布前本地检查：版本、生产构建、前端及 Rust 全部测试
 
 pnpm tauri build                                    # 当前平台安装包
 pnpm tauri build --target universal-apple-darwin   # macOS 通用包（需先 rustup target add aarch64-apple-darwin x86_64-apple-darwin）
@@ -32,7 +33,7 @@ pnpm tauri build --bundles nsis                     # Windows exe
 
 `pnpm tauri dev` 期间的 `http://localhost:1420` 只是给应用窗口提供页面的开发服务器。在普通浏览器里打开它没有后端，目录选择、git 操作都不可用，页面只显示一条提示。
 
-产物位于 `src-tauri/target/**/release/bundle/`。CI 配置在 `.github/workflows/build.yml`；main/PR 运行测试，仅推送 `v*` 标签触发安装包发布。
+产物位于 `src-tauri/target/**/release/bundle/`。CI 配置在 `.github/workflows/build.yml`；普通分支 push（包括 main）不自动触发，PR 运行双平台测试，手动预检运行测试和打包但不发布，仅推送 `v*` 标签触发发布。发布前按 [发布流程](docs/release-process.md) 检查，问题记录见 [Windows 发布失败复盘](docs/incidents/2026-10-30-windows-release.md)。
 
 ## 目录结构
 
@@ -89,7 +90,7 @@ src/
 
 ## 验证状态
 
-v0.1.1 已通过前端 48 项测试、Rust 76 项测试、macOS/Windows CI 构建和安装包发布。本次本地迭代新增文件读写、终端和界面回归测试，最新验收状态见实施清单。
+v0.1.4 已通过前端 67 项测试、macOS/Windows Rust 测试、双平台安装包构建和 GitHub Release 发布。本地 macOS Rust 86 项，Windows CI 83 项，差异来自平台条件编译。最新验收状态见实施清单。
 
 M3 集成测试覆盖：hunk 级与行级部分提交（含中文/空格路径、未跟踪新文件、CRLF 与无结尾换行、`autocrlf=true` + `safecrlf=true`、文件名含 `[]`）、hook 失败后 intent-to-add 保留、Stash 全流程（仅选中文件、含未跟踪、按哈希 pop、冲突、建分支）、标签新建/推送/删除远端、分支比较与工作区比较、跨重命名的文件历史、含未提交行的 Blame、作者/日期/路径过滤、提交前检查只报新增行；另有分组/变更列表存储、扫描目录的单测。
 
@@ -108,6 +109,6 @@ M2 集成测试覆盖 specs/08 的验收项：
 ## 已知限制
 
 - `pnpm-lock.yaml` 与 `src-tauri/Cargo.lock` 已提交；CI 使用 `--frozen-lockfile`。
-- 发布：main 分支推送和 PR 只运行测试；推送 `v*` 标签（例如 `git tag -a v0.1.0 -m "Release v0.1.0"` 后 `git push origin v0.1.0`）时，测试通过后构建 macOS 通用 DMG 和 Windows NSIS 安装包，并上传至对应的 GitHub Release。签名与公证：在仓库 secrets 中填入证书后自动签名（macOS Developer ID + notarytool 公证，Windows Authenticode），未填时产出未签名包。需要的 secrets 列表见 `.github/workflows/build.yml` 顶部注释。证书需要自行申请（Apple Developer Program；Windows 推荐 EV 或云端签名证书以避免 SmartScreen 信誉积累期）。
+- 发布：仅推送 `v*` 标签时，测试通过后构建 macOS 通用 DMG 和 Windows NSIS 安装包，并上传至对应的 GitHub Release。main 等普通分支 push 不触发，PR 只测试，手动预检只测试和打包。创建 tag 前必须按 [发布流程](docs/release-process.md) 验证候选提交。签名与公证：在仓库 secrets 中填入证书后自动签名（macOS Developer ID + notarytool 公证，Windows Authenticode），未填时产出未签名包。需要的 secrets 列表见 `.github/workflows/build.yml` 顶部注释。证书需要自行申请（Apple Developer Program；Windows 推荐 EV 或云端签名证书以避免 SmartScreen 信誉积累期）。
 - 快捷键为固定的 JetBrains 键位（设置 › 快捷键 可查看），暂不支持自定义。
 - 部分提交的选择只在本次运行中保留，重启应用后恢复为整文件勾选。

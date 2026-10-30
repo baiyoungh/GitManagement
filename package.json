@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:ui": "node scripts/smoke-workspace.cjs",
     "typecheck": "tsc --noEmit",
+    "release:versions": "node scripts/check-release-version.cjs",
+    "release:check": "pnpm release:versions && pnpm build && pnpm test && cargo test --locked --manifest-path src-tauri/Cargo.toml",
     "tauri": "tauri",
     "icons": "tauri icon app-icon.svg"
   },
