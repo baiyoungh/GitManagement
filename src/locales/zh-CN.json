@@ -1,4 +1,18 @@
 {
+  "files": {
+    "title": "仓库文件", "openFiles": "已打开文件", "refresh": "刷新文件目录", "retry": "重试", "emptyDirectory": "空目录",
+    "truncated": "此目录超过 10000 项，未全部显示。", "symlink": "符号链接或特殊文件，使用外部编辑器打开。",
+    "select": "选择文件查看或编辑", "save": "保存", "reload": "重新加载磁盘内容", "discard": "放弃修改", "close": "关闭文件",
+    "external": "在外部编辑器打开", "unsaved": "有未保存的修改", "discardBody": "重新加载将放弃当前文件的未保存修改。",
+    "diskChanged": "磁盘文件已改变，当前编辑内容已保留。保存前请核对外部修改。",
+    "exitBody": "以下文件有未保存修改。", "saveAll": "全部保存并退出", "discardExit": "放弃修改并退出",
+    "readOnly": { "binary": "二进制或非 UTF-8 文件，请使用外部编辑器。", "tooLarge": "文件超过 2 MiB，请使用外部编辑器。", "mixedEol": "文件包含混合换行符，仅供预览，以免保存时改变原格式。", "permissions": "文件没有写入权限，仅供预览。" }
+  },
+  "terminal": {
+    "title": "终端", "session": "终端 {{n}}", "new": "新建终端", "close": "关闭终端会话", "clear": "清空终端显示",
+    "external": "在外部终端打开", "selectRepo": "选择仓库后打开终端。", "noSession": "没有打开的终端会话。",
+    "starting": "正在启动", "running": "运行中", "exited": "已退出", "failed": "启动失败"
+  },
   "common": {
     "ok": "确定",
     "cancel": "取消",
@@ -25,6 +39,7 @@
     "hint": "在项目根目录执行上面的命令，会自动弹出 GitManagement 窗口。"
   },
   "nav": {
+    "files": "文件",
     "changes": "变更",
     "log": "日志",
     "branches": "分支",
@@ -68,6 +83,11 @@
     "ctxOpenFiles": "在文件管理器中打开",
     "ctxOpenTerminal": "在终端中打开",
     "ctxRename": "重命名…",
+    "renameRepo": "重命名 {{name}}",
+    "displayName": "显示名称",
+    "nameRequired": "请输入显示名称",
+    "scanChildren": "扫描子仓库…",
+    "nestedIn": "子仓库，位于 {{name}} 内",
     "scan": "扫描目录导入…"
   },
   "overview": {
@@ -176,6 +196,7 @@
   },
   "diff": {
     "sideBySide": "并排",
+    "horizontalScroll": "横向滚动两侧代码",
     "unified": "统一",
     "whitespace": {
       "none": "不忽略空白",
@@ -228,6 +249,7 @@
     "checkout": "检出",
     "newBranch": "新建分支…",
     "newBranchFrom": "从此新建分支…",
+    "newBranchFromName": "从「{{name}}」新建分支…",
     "merge": "合并到当前分支",
     "rebase": "当前分支变基到此",
     "rename": "重命名…",
@@ -253,6 +275,11 @@
     "info": "信息"
   },
   "branchDialog": {
+    "source": "来源分支或版本",
+    "head": "当前版本（HEAD）",
+    "custom": "标签或提交…",
+    "revision": "标签或提交",
+    "duplicate": "已存在同名本地分支",
     "createTitle": "新建分支",
     "name": "分支名",
     "startPoint": "起点（分支或提交，留空为 HEAD）",
@@ -441,6 +468,11 @@
     "succeeded": "{{task}} 完成"
   },
   "errors": {
+    "files": {
+      "unsafePath": "无法访问该路径：不允许访问 Git 元数据或符号链接。", "notFile": "该路径不是普通文件。",
+      "conflict": "文件已被其他程序修改。编辑内容已保留，请核对磁盘内容后重新加载。", "readOnly": "此文件只读，无法保存。", "tooLarge": "文件超过 2 MiB，无法在内置编辑器中保存。"
+    },
+    "terminal": { "failed": "终端操作失败。", "closed": "终端会话已结束。", "limit": "最多可以同时打开 12 个终端会话。" },
     "unknown": "发生未知错误",
     "internal": "内部错误",
     "db": {
@@ -744,10 +776,17 @@
     "syncNote": "强制推送的目标会按普通推送执行；没有规则的仓库会被跳过。"
   },
   "branchPopup": {
+    "loadFailed": "无法加载分支",
+    "empty": "没有匹配的分支",
     "title": "分支",
     "actions": "操作",
-    "checkoutRev": "检出标签或提交"
+    "checkoutRev": "检出标签或提交",
+    "repositories": "当前仓库及子仓库",
+    "discovering": "正在发现子仓库…",
+    "discoverFailed": "子仓库扫描失败",
+    "addAndManage": "添加并管理此子仓库"
   },
+  "layout": { "resize": "调整分区大小" },
   "repoSwitcher": {
     "title": "切换仓库"
   },
@@ -832,7 +871,9 @@
     "root": "父目录",
     "scan": "扫描",
     "scanning": "扫描中…",
-    "skipHint": "会跳过隐藏目录、node_modules、target 等；找到仓库后不再深入其内部。",
+    "skipHint": "扫描深度内所有目录（包括仓库内部）；排除 .git 元数据，不跟随目录符号链接。",
+    "nested": "子仓库",
+    "linked": "worktree / 子模块",
     "someFailed": "{{count}} 个仓库导入失败",
     "title": "扫描目录导入",
     "truncated": "结果过多，只显示前 2000 个"

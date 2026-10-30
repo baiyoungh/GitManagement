@@ -27,6 +27,9 @@ fn configure(r: &GitRunner, dir: &Path) {
     git(r, dir, &["config", "user.name", "Test"]);
     git(r, dir, &["config", "user.email", "t@example.com"]);
     git(r, dir, &["config", "commit.gpgsign", "false"]);
+    // Keep fixture contents independent of the host's Git line-ending defaults.
+    git(r, dir, &["config", "core.autocrlf", "false"]);
+    git(r, dir, &["config", "core.eol", "lf"]);
 }
 
 fn init_repo(r: &GitRunner, dir: &Path) {

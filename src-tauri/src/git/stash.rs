@@ -119,9 +119,10 @@ pub fn create(repo: &Repo, req: &StashCreateReq) -> AppResult<()> {
             repo.join(p)?;
         }
         args.push("--".into());
-        args.extend(req.paths.iter().cloned());
+        args.extend(req.paths.iter().map(|p| format!(":(literal){}", p)));
     }
-    let out = repo.exec(&args, &RunOpts::literal())?;
+    // GIT_LITERAL_PATHSPECS also affects stash's internal clean command; use per-path magic instead.
+    let out = repo.exec(&args, &RunOpts::default())?;
     if out.code != 0 {
         return Err(super::runner::classify(&out.stderr, &out.text()));
     }

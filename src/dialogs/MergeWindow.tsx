@@ -1,6 +1,7 @@
 // 三栏合并窗口（specs/05 第 2.2 节；X-03、X-04）
 // 左：我方（Ours）  中：结果（可编辑）  右：对方（Theirs）
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SplitView } from '../components/SplitView';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -241,7 +242,7 @@ export function MergeWindow({ repoId, path, oursLabel, theirsLabel, onClose }: {
       {q.isError && <p className="error-text pad">{errorMessage(q.error)}</p>}
       {q.data?.worktreeEdited && <div className="diff-notice warn-text">{t('merge.worktreeEdited')}</div>}
       {model && q.data && (
-        <div className={`merge-body ${showBase ? 'with-base' : ''}`}>
+        <SplitView key={String(showBase)} id={showBase ? 'merge-with-base' : 'merge'} className="merge-body" minSizes={showBase ? [140, 140, 140, 140] : [140, 140, 140]}>
           <div className="merge-col">
             <div className="merge-col-title">
               {t('conflicts.ours')} · {oursLabel}
@@ -312,7 +313,7 @@ export function MergeWindow({ repoId, path, oursLabel, theirsLabel, onClose }: {
               children={sideButtons('theirs')}
             />
           </div>
-        </div>
+        </SplitView>
       )}
       <div className="modal-footer">
         <span className={c.conflicts > 0 ? 'warn-text' : 'muted'}>

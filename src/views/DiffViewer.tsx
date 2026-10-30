@@ -1,5 +1,5 @@
 // 差异查看器（specs/05 第 1 节；D-01 并排、D-02 统一、D-03 选项、D-04 语法高亮）
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { errorMessage } from '../lib/errors';
 import { hunkKeys, hunkState, lineIncluded, toggleHunk, toggleLine } from '../lib/partialModel';
 import { usePartial, partialKey } from '../stores/partialStore';
 import { ImageDiff, isImagePath } from './ImageDiff';
+import { widestLine } from '../lib/diffWidth';
 
 const ROW_H = 20;
 
@@ -118,6 +119,47 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
   const rows: (Row | UnifiedRow)[] = prefs.mode === 'side' ? sideRows : uniRows;
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const horizontalRef = useRef<HTMLDivElement>(null);
+  const settings = useApp((s) => s.settings);
+  const [lineWidth, setLineWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = parentRef.current;
+    if (!element) return;
+    const measure = () => {
+      const context = document.createElement('canvas').getContext('2d');
+      if (!context) return;
+      const style = getComputedStyle(element);
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const textWidth = (text: string) => context.measureText(text).width;
+      const tab = Math.max(1, textWidth(' ') * 8);
+      setLineWidth(Math.max(widestLine(diff?.old.text, textWidth, tab), widestLine(diff?.new.text, textWidth, tab)));
+    };
+    measure();
+    const resize = new ResizeObserver(() => setViewportWidth(element.clientWidth));
+    resize.observe(element);
+    setViewportWidth(element.clientWidth);
+    let disposed = false;
+    void document.fonts?.ready.then(() => { if (!disposed) measure(); });
+    return () => { disposed = true; resize.disconnect(); };
+  }, [diff, prefs.mode, settings['code.font'], settings['code.fontSize']]);
+  useEffect(() => {
+    const element = parentRef.current;
+    if (!element) return;
+    element.scrollLeft = 0;
+    element.style.setProperty('--diff-offset', '0px');
+    if (horizontalRef.current) horizontalRef.current.scrollLeft = 0;
+    const wheel = (event: WheelEvent) => {
+      const bar = horizontalRef.current;
+      const delta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+      if (prefs.mode === 'side' && bar && delta) {
+        event.preventDefault();
+        bar.scrollLeft += delta * (event.deltaMode === 1 ? ROW_H : event.deltaMode === 2 ? bar.clientWidth : 1);
+      }
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => element.removeEventListener('wheel', wheel);
+  }, [target?.repoId, target?.file.path, prefs.mode, diff]);
   const virt = useVirtualizer({ count: rows.length, getScrollElement: () => parentRef.current, estimateSize: () => ROW_H, overscan: 30 });
 
   const hunkFirstRow = useMemo(() => {
@@ -139,6 +181,7 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest('.terminal-host')) return;
       if (e.key === 'F7') {
         e.preventDefault();
         go(e.shiftKey ? -1 : 1);
@@ -322,7 +365,7 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
       <>
         {notices.length > 0 && <div className="diff-notice">{notices.join(' · ')}</div>}
         <div className="diff-scroll mono" ref={parentRef}>
-          <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
+          <div className="diff-canvas" style={{ height: virt.getTotalSize(), position: 'relative', minWidth: prefs.mode === 'side' ? 0 : lineWidth + (selectable ? 144 : 122) }}>
             {virt.getVirtualItems().map((vi) => {
               const r = rows[vi.index];
               const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: ROW_H, transform: `translateY(${vi.start}px)` };
@@ -340,7 +383,9 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
                   <div key={vi.key} className={`diff-row side ${r.hunk === current ? 'current' : ''}`} style={style}>
                     {selLn(r.left.no, 'o', r.hunk, r.left.type) ?? <span className="ln">{r.left.no ?? ''}</span>}
                     <span className={`code ${r.left.type} ${excluded(r.hunk, 'o', r.left.no) ? 'excluded' : ''}`}>
-                      <Highlighted text={r.left.text} tokens={r.left.no ? hl.data?.old?.[r.left.no - 1] : undefined} inline={ir ? [ir.prefix, ir.suffixA] : undefined} />
+                      <span className="code-inner">
+                        <Highlighted text={r.left.text} tokens={r.left.no ? hl.data?.old?.[r.left.no - 1] : undefined} inline={ir ? [ir.prefix, ir.suffixA] : undefined} />
+                      </span>
                     </span>
                     <span className="gutter">
                       {firstOfHunk && selectable && hunkBox(r.hunk!)}
@@ -352,7 +397,9 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
                     </span>
                     {selLn(r.right.no, 'n', r.hunk, r.right.type) ?? <span className="ln">{r.right.no ?? ''}</span>}
                     <span className={`code ${r.right.type} ${excluded(r.hunk, 'n', r.right.no) ? 'excluded' : ''}`}>
-                      <Highlighted text={r.right.text} tokens={r.right.no ? hl.data?.new?.[r.right.no - 1] : undefined} inline={ir ? [ir.prefix, ir.suffixB] : undefined} />
+                      <span className="code-inner">
+                        <Highlighted text={r.right.text} tokens={r.right.no ? hl.data?.new?.[r.right.no - 1] : undefined} inline={ir ? [ir.prefix, ir.suffixB] : undefined} />
+                      </span>
                     </span>
                   </div>
                 );
@@ -377,6 +424,16 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
             })}
           </div>
         </div>
+        {prefs.mode === 'side' && <div className="diff-side-x" ref={horizontalRef} tabIndex={0} role="region" aria-label={t('diff.horizontalScroll')}
+          onKeyDown={(event) => {
+            const bar = event.currentTarget;
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            bar.scrollLeft = event.key === 'Home' ? 0 : event.key === 'End' ? bar.scrollWidth : bar.scrollLeft + (event.key === 'ArrowLeft' ? -80 : 80);
+          }}
+          onScroll={(event) => parentRef.current?.style.setProperty('--diff-offset', `${-event.currentTarget.scrollLeft}px`)}>
+          <div style={{ height: 1, width: Math.max(viewportWidth, lineWidth + 12 + (viewportWidth + 118) / 2) }} />
+        </div>}
       </>
     );
   }

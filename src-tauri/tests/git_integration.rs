@@ -29,6 +29,9 @@ fn setup(r: &GitRunner) -> tempfile::TempDir {
     git(r, &dir, &["config", "user.name", "Test"]);
     git(r, &dir, &["config", "user.email", "test@example.com"]);
     git(r, &dir, &["config", "commit.gpgsign", "false"]);
+    // Keep fixture contents independent of the host's Git line-ending defaults.
+    git(r, &dir, &["config", "core.autocrlf", "false"]);
+    git(r, &dir, &["config", "core.eol", "lf"]);
     fs::write(dir.join("a.txt"), "a\n").unwrap();
     fs::write(dir.join("文件 b.txt"), "b\n").unwrap();
     fs::write(dir.join("c.txt"), "c\n").unwrap();
@@ -260,4 +263,38 @@ fn branch_list_and_upstream() {
     branch::unset_upstream(&repo, "main").unwrap();
     let list = branch::list(&repo).unwrap();
     assert!(list.iter().find(|b| b.name == "main").unwrap().upstream.is_none());
+}
+
+#[test]
+fn create_branch_from_local_and_remote_full_refs() {
+    let r = runner();
+    let tmp = setup(&r);
+    let dir = repo_dir(&tmp);
+    let repo = Repo::new(&r, &dir);
+    let oid = |rev: &str| r.run(&dir, &["rev-parse", rev], &RunOpts::read()).unwrap().text().trim().to_string();
+    let initial = oid("HEAD");
+    git(&r, &dir, &["branch", "source"]);
+    git(&r, &dir, &["commit", "--allow-empty", "-qm", "remote source"]);
+    let remote = oid("HEAD");
+    git(&r, &dir, &["update-ref", "refs/remotes/origin/prod", &remote]);
+    git(&r, &dir, &["commit", "--allow-empty", "-qm", "current head"]);
+    let head = oid("HEAD");
+    // A same-named tag must not override the explicitly selected local branch.
+    git(&r, &dir, &["tag", "source"]);
+    for (name, source, expected) in [
+        ("from-local", "refs/heads/source", initial),
+        ("from-remote", "refs/remotes/origin/prod", remote),
+    ] {
+        branch::create(&repo, &branch::CreateBranchReq {
+            name: name.into(), start_point: Some(source.into()), checkout: false, upstream: None,
+        }).unwrap();
+        assert_eq!(oid(&format!("refs/heads/{name}")), expected);
+        assert_eq!(oid("HEAD"), head);
+        assert_eq!(status(&repo, false).unwrap().branch.head.as_deref(), Some("main"));
+        assert!(branch::list(&repo).unwrap().iter().find(|b| b.name == name).unwrap().upstream.is_none());
+    }
+    branch::create(&repo, &branch::CreateBranchReq {
+        name: "and-switch".into(), start_point: Some("refs/heads/source".into()), checkout: true, upstream: None,
+    }).unwrap();
+    assert_eq!(status(&repo, false).unwrap().branch.head.as_deref(), Some("and-switch"));
 }

@@ -2,12 +2,14 @@ pub mod askpass;
 pub mod commands;
 pub mod diff3;
 pub mod error;
+pub mod files;
 pub mod git;
 pub mod security;
 pub mod storage;
 pub mod sync_engine;
 pub mod system;
 pub mod tasks;
+pub mod terminal;
 pub mod watcher;
 
 use commands::AppState;
@@ -20,6 +22,29 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // The native macOS predefined Quit calls terminate: directly, bypassing ExitRequested.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
+                let menu = Menu::default(app.handle())?;
+                let items = menu.items()?;
+                if let Some(MenuItemKind::Submenu(original)) = items.first() {
+                    menu.remove(original)?;
+                }
+                let quit = MenuItem::with_id(app, "quit", "Quit GitManagement", true, Some("CmdOrCtrl+Q"))?;
+                let app_menu = Submenu::with_items(app, "GitManagement", true, &[
+                    &PredefinedMenuItem::about(app, None, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ])?;
+                menu.insert(&app_menu, 0)?;
+                app.set_menu(menu)?;
+            }
             let data_dir = app.path().app_data_dir()?;
             let db = Arc::new(storage::Db::open(&data_dir.join("gitmanagement.db")).map_err(|e| e.to_string())?);
 
@@ -42,6 +67,9 @@ pub fn run() {
                 git,
                 tasks: Arc::new(tasks::TaskManager::new(parallel)),
                 watcher: Arc::new(watcher::WatchManager::new()),
+                terminals: terminal::TerminalManager::default(),
+                allow_exit: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                unsaved_files: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             };
 
             // 启动时为已登记且开启自动刷新的仓库建立文件监听（R-09）
@@ -55,7 +83,20 @@ pub fn run() {
             app.manage(state);
             Ok(())
         })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "quit" { app.exit(0); }
+        })
         .invoke_handler(tauri::generate_handler![
+            commands::app_exit,
+            commands::app_set_dirty,
+            commands::files_list,
+            commands::files_read,
+            commands::files_save,
+            commands::terminal_open,
+            commands::terminal_input,
+            commands::terminal_resize,
+            commands::terminal_close,
+            commands::terminal_ack,
             commands::app_info,
             commands::git_set_path,
             commands::settings_get_all,
@@ -162,6 +203,27 @@ pub fn run() {
             commands::commit_precheck,
             commands::remote_check_all,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running GitManagement");
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<AppState>();
+                if state.unsaved_files.load(std::sync::atomic::Ordering::SeqCst) && !state.allow_exit.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.emit("app-close-requested", ());
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while running GitManagement")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                let state = app.state::<AppState>();
+                if state.unsaved_files.load(std::sync::atomic::Ordering::SeqCst) && !state.allow_exit.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                    let _ = app.emit("app-close-requested", ());
+                }
+            }
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<AppState>().terminals.close_all();
+            }
+        });
 }

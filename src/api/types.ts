@@ -637,3 +637,26 @@ export interface RemoteHealth {
   name: string;
   result: RemoteTestResult;
 }
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  directory: boolean;
+  symlink: boolean;
+}
+
+export interface DirectoryListing {
+  entries: FileEntry[];
+  truncated: boolean;
+}
+
+export interface FileDocument {
+  text: string | null;
+  revision: string;
+  size: number;
+  eol: string;
+  bom: boolean;
+  readOnly: 'binary' | 'tooLarge' | 'mixedEol' | 'permissions' | null;
+}
+
+export type TerminalEvent = { type: 'data'; data: number[] } | { type: 'exit'; code: number } | { type: 'error'; message: string };

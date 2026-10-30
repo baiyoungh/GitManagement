@@ -9,23 +9,25 @@ import { useApp } from '../stores/appStore';
 import { Field, Modal } from '../components/ui';
 import { shortPath } from '../lib/format';
 import { errorMessage } from '../lib/errors';
+import { parentRepo } from '../lib/repoPaths';
 
-export function ScanDialog() {
+export function ScanDialog({ initialRoot = '', initialGroup = '' }: { initialRoot?: string; initialGroup?: string | null }) {
   const { t } = useTranslation();
   const close = useApp((s) => s.closeDialog);
   const toast = useApp((s) => s.toast);
   const groups = useGroups();
-  const [root, setRoot] = useState('');
+  const [root, setRoot] = useState(initialRoot);
   const [depth, setDepth] = useState(3);
   const [items, setItems] = useState<ScanItem[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [group, setGroup] = useState<string>('');
+  const [group, setGroup] = useState<string>(initialGroup ?? '');
   const [busy, setBusy] = useState(false);
+  const resetResults = () => { setItems(null); setPicked(new Set()); setTruncated(false); };
 
   const browse = async () => {
     const r = await open({ directory: true, multiple: false });
-    if (typeof r === 'string') setRoot(r);
+    if (typeof r === 'string') { setRoot(r); resetResults(); }
   };
 
   const scan = async () => {
@@ -69,7 +71,7 @@ export function ScanDialog() {
 
   return (
     <Modal
-      title={t('scan.title')}
+      title={t(initialRoot ? 'sidebar.scanChildren' : 'scan.title')}
       onClose={close}
       width={680}
       footer={
@@ -84,12 +86,12 @@ export function ScanDialog() {
       <div className="row-fields">
         <Field label={t('scan.root')}>
           <div className="input-row">
-            <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="~/work" />
-            <button onClick={() => void browse()}>{t('common.browse')}</button>
+            <input disabled={busy} value={root} onChange={(e) => { setRoot(e.target.value); resetResults(); }} placeholder="~/work" />
+            <button disabled={busy} onClick={() => void browse()}>{t('common.browse')}</button>
           </div>
         </Field>
         <Field label={t('scan.depth')}>
-          <input type="number" min={1} max={8} value={depth} onChange={(e) => setDepth(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} />
+          <input disabled={busy} type="number" min={1} max={8} value={depth} onChange={(e) => { setDepth(Math.max(1, Math.min(8, Number(e.target.value) || 1))); resetResults(); }} />
         </Field>
       </div>
       <div className="action-row">
@@ -123,9 +125,10 @@ export function ScanDialog() {
                     }}
                   />
                   <strong>{x.name}</strong>
+                  {parentRepo(x.path, items) && <span className="tag" title={parentRepo(x.path, items)?.path}>{t('scan.nested')}</span>}
                   <span className="mono muted">{shortPath(x.path)}</span>
                   {x.registered && <span className="tag">{t('scan.registered')}</span>}
-                  {x.linked && <span className="tag">worktree</span>}
+                  {x.linked && <span className="tag">{t('scan.linked')}</span>}
                 </label>
               </li>
             ))}

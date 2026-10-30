@@ -1,5 +1,6 @@
 // Stash 标签页（C-10，specs/04 第 5 节）：列表、文件差异、应用 / 弹出 / 删除 / 从 stash 建分支
 import { useEffect, useState } from 'react';
+import { SplitView } from '../components/SplitView';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
@@ -101,7 +102,8 @@ export function StashView({ repoId }: { repoId: string }) {
       : null;
 
   return (
-    <div className="stash">
+    <>
+    <SplitView id="stash" className="stash" initialSizes={[35, 65]} minSizes={[220, 280]}>
       <div className="stash-left">
         <div className="toolbar small">
           <button className="primary" disabled={!hasChanges} onClick={() => openDialog({ type: 'stashCreate', repoId, paths: [] })}>
@@ -154,6 +156,7 @@ export function StashView({ repoId }: { repoId: string }) {
                   </button>
                 ))}
             </div>
+            <SplitView id="stash-details" direction="column" initialSizes={[30, 70]} minSizes={[80, 120]}>
             <div className="commit-files">
               <h4>{t('log.changedFiles', { count: files.data?.length ?? 0 })}</h4>
               <ul>
@@ -170,16 +173,16 @@ export function StashView({ repoId }: { repoId: string }) {
                 ))}
               </ul>
             </div>
-            {target && (
-              <div className="log-diff">
-                <DiffViewer target={target} />
-              </div>
-            )}
+            <div className="log-diff">
+              {target ? <DiffViewer target={target} /> : <p className="muted pad">{t('diff.selectFile')}</p>}
+            </div>
+            </SplitView>
           </>
         )}
       </div>
-      {menu.element}
-    </div>
+    </SplitView>
+    {menu.element}
+    </>
   );
 }
 

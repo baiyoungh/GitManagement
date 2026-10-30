@@ -1,15 +1,16 @@
 // 分支标签页（specs/06 第 6 节；B-01 ~ B-05、B-07）
 import { useMemo, useState } from 'react';
+import { SplitView } from '../components/SplitView';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import type { BranchInfo, TagInfo } from '../api/types';
-import { invalidateRepo, reportError, useBranches, useRemotes, useStatus, useTags } from '../api/queries';
+import { invalidateRepo, reportError, useBranches, useRemotes, useTags } from '../api/queries';
 import { ComparePanel } from './ComparePanel';
 import { useApp } from '../stores/appStore';
 import { AheadBehind, useContextMenu, type MenuItem } from '../components/ui';
 import { Icon } from '../components/Icon';
-import { checkoutBranch, openPush } from '../lib/actions';
-import { openSyncPreview } from '../dialogs/SyncDialog';
+import { checkoutBranch } from '../lib/actions';
+import { useBranchActions } from '../hooks/useBranchActions';
 import { dateTime, relativeTime } from '../lib/format';
 import { errorMessage } from '../lib/errors';
 
@@ -36,7 +37,6 @@ function groupByPrefix(list: BranchInfo[], nameOf: (b: BranchInfo) => string): B
 export function BranchesView({ repoId }: { repoId: string }) {
   const { t } = useTranslation();
   const branches = useBranches(repoId);
-  const status = useStatus(repoId);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -69,131 +69,15 @@ export function BranchesView({ repoId }: { repoId: string }) {
 
   const refresh = () => invalidateRepo(repoId);
 
-  const integrate = async (b: BranchInfo, mode: 'merge' | 'rebase') => {
-    const cur = status.data?.branch.head ?? 'HEAD';
-    const ok = await ask({
-      title: t(mode === 'merge' ? 'integrate.mergeTitle' : 'integrate.rebaseTitle'),
-      body: t(mode === 'merge' ? 'integrate.mergeBody' : 'integrate.rebaseBody', { target: b.name, current: cur }),
-    });
-    if (!ok) return;
-    try {
-      const r = await api.branch.integrate(repoId, b.name, mode);
-      if (r.conflicts) {
-        toast('error', t('integrate.conflicts'));
-        useApp.getState().setTab('changes');
-      } else toast('success', t('integrate.done'));
-    } catch (e) {
-      reportError(e);
-    } finally {
-      refresh();
-    }
-  };
-
-  const deleteRemote = async (b: BranchInfo) => {
-    if (!b.remote || !b.remoteBranch) return;
-    const ok = await ask({
-      title: t('deleteBranch.remoteTitle', { name: b.name }),
-      body: t('deleteBranch.remoteBody', { name: b.name }),
-      note: t('common.irreversible'),
-      danger: true,
-      confirmLabel: t('common.delete'),
-    });
-    if (!ok) return;
-    try {
-      await api.branch.deleteRemote(repoId, b.remote, b.remoteBranch);
-      toast('success', t('branches.deleted', { name: b.name }));
-    } catch (e) {
-      reportError(e);
-    } finally {
-      refresh();
-    }
-  };
-
-  const checkoutRemote = async (b: BranchInfo) => {
-    if (!b.remote || !b.remoteBranch) return;
-    const existing = all.find((x) => x.kind === 'local' && x.name === b.remoteBranch);
-    if (existing) {
-      await checkoutBranch(repoId, existing.name);
-      refresh();
+  const { actionsFor, checkout } = useBranchActions(repoId, all, (b) => {
+    if (!current) {
+      openDialog({ type: 'compare', repoId, left: 'HEAD', right: b.fullRef });
       return;
     }
-    try {
-      const name = await api.branch.checkoutRemote(repoId, b.remote, b.remoteBranch);
-      toast('success', t('branches.checkedOut', { name }));
-    } catch (e) {
-      reportError(e);
-    } finally {
-      refresh();
-    }
-  };
-
-  const actionsFor = (b: BranchInfo): MenuItem[] => {
-    const isLocal = b.kind === 'local';
-    const items: MenuItem[] = [
-      {
-        label: t('branches.checkout'),
-        disabled: b.isHead,
-        onClick: async () => {
-          if (isLocal) await checkoutBranch(repoId, b.name);
-          else await checkoutRemote(b);
-          refresh();
-        },
-      },
-      { label: t('branches.newBranchFrom'), onClick: () => openDialog({ type: 'createBranch', repoId, startPoint: b.name }) },
-      {
-        label: t('branches.compareWithCurrent'),
-        disabled: b.isHead || !current,
-        onClick: () => {
-          setSelected(b.fullRef);
-          setSelectedTag(null);
-          setDetailTab('compare');
-        },
-      },
-      { label: t('branches.compareWithWorktree'), onClick: () => openDialog({ type: 'compare', repoId, left: b.name, right: null }) },
-      { label: t('log.newTag'), onClick: () => openDialog({ type: 'tag', repoId, target: b.name, label: b.name }) },
-      ...(isLocal
-        ? [
-            { label: t('branches.syncByRule'), onClick: () => openSyncPreview(repoId, [b.name], null) },
-            { label: t('branches.editRule'), onClick: () => useApp.getState().setTab('mapping') },
-          ]
-        : []),
-      { separator: true },
-      { label: t('branches.merge'), disabled: b.isHead || !current, onClick: () => integrate(b, 'merge') },
-      { label: t('branches.rebase'), disabled: b.isHead || !current, onClick: () => integrate(b, 'rebase') },
-      { separator: true },
-    ];
-    if (isLocal) {
-      items.push(
-        { label: t('branches.push'), onClick: () => openPush(repoId, b.name) },
-        { label: t('branches.setUpstream'), onClick: () => openDialog({ type: 'upstream', repoId, name: b.name }) },
-        {
-          label: t('branches.unsetUpstream'),
-          disabled: !b.upstream,
-          onClick: () =>
-            api.branch
-              .setUpstream(repoId, b.name, null, null)
-              .then(() => toast('success', t('branches.upstreamSet')), reportError)
-              .finally(refresh),
-        },
-        { label: t('branches.rename'), onClick: () => openDialog({ type: 'renameBranch', repoId, name: b.name }) },
-        {
-          label: t('branches.delete'),
-          danger: true,
-          disabled: b.isHead,
-          onClick: () =>
-            openDialog({
-              type: 'deleteBranch',
-              repoId,
-              name: b.name,
-              upstream: b.upstreamRemote && b.upstreamBranch && !b.upstreamGone ? { remote: b.upstreamRemote, branch: b.upstreamBranch } : null,
-            }),
-        },
-      );
-    } else {
-      items.push({ label: t('branches.delete'), danger: true, onClick: () => deleteRemote(b) });
-    }
-    return items;
-  };
+    setSelected(b.fullRef);
+    setSelectedTag(null);
+    setDetailTab('compare');
+  });
 
   const row = (b: BranchInfo, label: string, depth: number) => (
     <li key={b.fullRef}>
@@ -204,7 +88,7 @@ export function BranchesView({ repoId }: { repoId: string }) {
           setSelected(b.fullRef);
           setSelectedTag(null);
         }}
-        onDoubleClick={() => (b.kind === 'local' ? checkoutBranch(repoId, b.name).then(refresh) : checkoutRemote(b))}
+        onDoubleClick={() => void checkout(b)}
         onContextMenu={(e) => {
           setSelected(b.fullRef);
           menu.open(e, actionsFor(b));
@@ -229,7 +113,7 @@ export function BranchesView({ repoId }: { repoId: string }) {
   const tagActions = (tg: TagInfo): MenuItem[] => [
     { label: t('branches.checkout'), onClick: () => checkoutBranch(repoId, tg.name).then(refresh) },
     { label: t('branches.newBranchFrom'), onClick: () => openDialog({ type: 'createBranch', repoId, startPoint: tg.name }) },
-    { label: t('branches.compareWithCurrent'), disabled: !current, onClick: () => openDialog({ type: 'compare', repoId, left: current!.name, right: tg.name }) },
+    { label: t('branches.compareWithCurrent'), disabled: !current, onClick: () => openDialog({ type: 'compare', repoId, left: current!.fullRef, right: `refs/tags/${tg.name}` }) },
     { separator: true },
     ...(remotes.data ?? []).map((r) => ({
       label: t('tags.pushTo', { remote: r.name }),
@@ -278,7 +162,8 @@ export function BranchesView({ repoId }: { repoId: string }) {
     );
 
   return (
-    <div className="branches">
+    <>
+    <SplitView id="branches" className="branches" initialSizes={[34, 66]} minSizes={[220, 280]}>
       <div className="branches-left">
         <div className="toolbar small">
           <input type="search" placeholder={t('branches.search')} aria-label={t('branches.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -392,7 +277,7 @@ export function BranchesView({ repoId }: { repoId: string }) {
               </button>
             </div>
             {detailTab === 'compare' && current && !sel.isHead ? (
-              <ComparePanel key={sel.fullRef} repoId={repoId} left={current.name} right={sel.name} />
+              <ComparePanel key={sel.fullRef} repoId={repoId} left={current.fullRef} right={sel.fullRef} />
             ) : (
             <>
             <dl>
@@ -433,7 +318,8 @@ export function BranchesView({ repoId }: { repoId: string }) {
           </div>
         )}
       </div>
-      {menu.element}
-    </div>
+    </SplitView>
+    {menu.element}
+    </>
   );
 }

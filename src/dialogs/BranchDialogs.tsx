@@ -1,5 +1,5 @@
 // 新建 / 重命名 / 删除分支、设置 upstream（B-02、B-04、M-02）
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import { invalidateRepo, reportError, useBranches, useRemotes } from '../api/queries';
@@ -12,20 +12,29 @@ export function CreateBranchDialog({ repoId, startPoint }: { repoId: string; sta
   const close = useApp((s) => s.closeDialog);
   const toast = useApp((s) => s.toast);
   const remotes = useRemotes(repoId);
+  const branches = useBranches(repoId);
   const [name, setName] = useState('');
-  const [start, setStart] = useState(startPoint ?? '');
+  const [source, setSource] = useState(startPoint ?? 'HEAD');
+  const [custom, setCustom] = useState('');
   const [checkout, setCheckout] = useState(true);
   const [withUpstream, setWithUpstream] = useState(false);
   const [remote, setRemote] = useState('');
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const remoteName = remote || remotes.data?.[0]?.name || '';
+  const list = branches.data ?? [];
+  const duplicate = list.some((b) => b.kind === 'local' && b.name === name.trim());
+  const start = source === 'custom' ? custom.trim() : source;
+  const valid = !!name.trim() && !!start && !duplicate;
 
   const submit = async () => {
+    if (!valid || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       await api.branch.create(repoId, {
         name: name.trim(),
-        startPoint: start.trim() || null,
+        startPoint: start === 'HEAD' ? null : start,
         checkout,
         upstream: withUpstream && remoteName ? { remote: remoteName, branch: name.trim() } : null,
       });
@@ -34,6 +43,7 @@ export function CreateBranchDialog({ repoId, startPoint }: { repoId: string; sta
     } catch (e) {
       reportError(e);
     } finally {
+      submitting.current = false;
       setBusy(false);
       invalidateRepo(repoId);
     }
@@ -46,18 +56,29 @@ export function CreateBranchDialog({ repoId, startPoint }: { repoId: string; sta
       footer={
         <>
           <button onClick={close}>{t('common.cancel')}</button>
-          <button className="primary" disabled={!name.trim() || busy} onClick={submit}>
+          <button className="primary" disabled={!valid || busy} onClick={submit}>
             {t('common.ok')}
           </button>
         </>
       }
     >
-      <Field label={t('branchDialog.name')}>
-        <input value={name} onChange={(e) => setName(e.target.value)} className="mono" onKeyDown={(e) => e.key === 'Enter' && name.trim() && submit()} />
+      <form className="branch-create-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <Field label={t('branchDialog.name')} hint={duplicate ? <span className="error-text">{t('branchDialog.duplicate')}</span> : undefined}>
+        <input value={name} onChange={(e) => setName(e.target.value)} className="mono" disabled={busy} />
       </Field>
-      <Field label={t('branchDialog.startPoint')}>
-        <input value={start} onChange={(e) => setStart(e.target.value)} className="mono" placeholder="HEAD" />
+      <Field label={t('branchDialog.source')}>
+        <select value={source} onChange={(e) => setSource(e.target.value)} disabled={busy}>
+          <option value="HEAD">{t('branchDialog.head')}</option>
+          {source !== 'HEAD' && source !== 'custom' && !list.some((b) => b.fullRef === source) && <option value={source}>{source}</option>}
+          {(['local', 'remote'] as const).map((kind) => <optgroup key={kind} label={t(`branches.${kind}`)}>
+            {list.filter((b) => b.kind === kind).map((b) => <option key={b.fullRef} value={b.fullRef}>{b.name}</option>)}
+          </optgroup>)}
+          <option value="custom">{t('branchDialog.custom')}</option>
+        </select>
       </Field>
+      {source === 'custom' && <Field label={t('branchDialog.revision')}>
+        <input className="mono" value={custom} onChange={(e) => setCustom(e.target.value)} disabled={busy} placeholder="v1.0 / a1b2c3d" />
+      </Field>}
       <label className="check">
         <input type="checkbox" checked={checkout} onChange={(e) => setCheckout(e.target.checked)} />
         {t('branchDialog.checkoutAfter')}
@@ -78,6 +99,8 @@ export function CreateBranchDialog({ repoId, startPoint }: { repoId: string; sta
           <span className="mono muted">/{name.trim() || '…'}</span>
         </div>
       )}
+      <button type="submit" hidden disabled={!valid || busy} />
+      </form>
     </Modal>
   );
 }

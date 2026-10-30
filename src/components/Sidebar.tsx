@@ -11,6 +11,7 @@ import { startPull } from '../lib/actions';
 import { runBatch } from '../lib/batch';
 import { openSyncPreview } from '../dialogs/SyncDialog';
 import { isMac } from '../lib/format';
+import { parentRepo, repoFolder } from '../lib/repoPaths';
 
 const DND_REPO = 'application/x-gm-repo';
 const DND_GROUP = 'application/x-gm-group';
@@ -19,6 +20,8 @@ function RepoItem(props: {
   repo: RepoView;
   selected: boolean;
   multi: boolean;
+  parent?: RepoView;
+  onRename: () => void;
   onClick: (e: React.MouseEvent) => void;
   onContext: (e: React.MouseEvent) => void;
   onDragStart: (e: React.DragEvent) => void;
@@ -52,12 +55,15 @@ function RepoItem(props: {
         setOver(false);
         props.onDrop(e);
       }}
-      className={over ? 'drop-before' : undefined}
+      className={`repo-row ${over ? 'drop-before' : ''}`}
     >
       <button
         className={`repo-item ${props.selected ? 'selected' : ''} ${props.multi ? 'multi' : ''}`}
         onClick={props.onClick}
         onContextMenu={props.onContext}
+        onKeyDown={(e) => {
+          if (e.key === 'F2') { e.preventDefault(); props.onRename(); }
+        }}
         draggable
         onDragStart={props.onDragStart}
         title={repo.path}
@@ -68,16 +74,19 @@ function RepoItem(props: {
           {dot === '⚠' ? <Icon name="warning" size={14} /> : <Icon name={dot === '●' ? 'dot' : 'circle'} size={14} />}
         </span>
         <span className="repo-main">
-          <span className="repo-name">
-            {repo.name}
-            <span className="repo-branch">{s?.branch ?? (s?.detached ? s.headShort : '')}</span>
-          </span>
+          <span className="repo-name">{repo.name}</span>
           <span className="repo-meta">
+            <span className="repo-folder" title={repo.path}><Icon name="folder" size={12} /><span>{repoFolder(repo.path)}</span></span>
+            {props.parent && <span className="repo-nested" title={t('sidebar.nestedIn', { name: props.parent.name })} aria-label={t('sidebar.nestedIn', { name: props.parent.name })}><Icon name="branch" size={12} /></span>}
+            <span className="repo-branch" title={s?.branch ?? s?.headShort ?? undefined}>{s?.branch ?? (s?.detached ? s.headShort : '')}</span>
             {s?.operation ? <span className="warn-text">{t(`status.operation.${s.operation}`)}</span> : s && s.changes > 0 && <span className="inline-icon"><Icon name="edit" size={12} />{s.changes}</span>}
             {s && <AheadBehind ahead={s.ahead} behind={s.behind} />}
             {repo.missing && <span className="warn-text">{t('sidebar.missing')}</span>}
           </span>
         </span>
+      </button>
+      <button className="repo-rename" onClick={props.onRename} title={t('sidebar.renameRepo', { name: repo.name })} aria-label={t('sidebar.renameRepo', { name: repo.name })}>
+        <Icon name="edit" size={13} />
       </button>
     </li>
   );
@@ -111,6 +120,7 @@ export function Sidebar() {
   const [dragGroup, setDragGroup] = useState<string | null>(null);
 
   const all = repos.data ?? [];
+  const parents = useMemo(() => new Map(all.map((repo) => [repo.id, parentRepo(repo.path, all)])), [all]);
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all.filter((r) => !q || r.name.toLowerCase().includes(q) || r.path.toLowerCase().includes(q));
@@ -133,6 +143,15 @@ export function Sidebar() {
 
   const refreshRepos = () => queryClient.invalidateQueries({ queryKey: keys.repos });
   const refreshGroups = () => queryClient.invalidateQueries({ queryKey: keys.groups });
+  const renameRepo = async (repo: RepoView) => {
+    const name = await prompt({
+      title: t('sidebar.ctxRename'), label: t('sidebar.displayName'), initial: repo.name,
+      validate: (value) => value.trim() ? null : t('sidebar.nameRequired'),
+    });
+    if (name?.trim() && name.trim() !== repo.name) {
+      await api.repo.rename(repo.id, name.trim()).then(refreshRepos, reportError);
+    }
+  };
   const multiRepos = all.filter((r) => multi.includes(r.id));
 
   // ---------- 点击：普通选中 / ⌘(Ctrl) 多选 / ⇧ 连续选 ----------
@@ -251,6 +270,7 @@ export function Sidebar() {
           }),
       },
       { label: t('sidebar.ctxCopyPath'), onClick: () => void navigator.clipboard.writeText(repo.path) },
+      { label: t('sidebar.scanChildren'), disabled: repo.missing, onClick: () => openDialog({ type: 'scan', root: repo.path, groupId: repo.groupId }) },
       { separator: true },
       {
         label: repo.favorite ? t('sidebar.ctxUnfavorite') : t('sidebar.ctxFavorite'),
@@ -259,10 +279,7 @@ export function Sidebar() {
       ...moveItems([repo.id]),
       {
         label: t('sidebar.ctxRename'),
-        onClick: async () => {
-          const name = await prompt({ title: t('sidebar.ctxRename'), label: t('groups.name'), initial: repo.name });
-          if (name) api.repo.rename(repo.id, name).then(refreshRepos, reportError);
-        },
+        onClick: () => renameRepo(repo),
       },
       {
         label: repo.watching ? t('sidebar.ctxAutoRefreshOff') : t('sidebar.ctxAutoRefreshOn'),
@@ -391,6 +408,8 @@ export function Sidebar() {
                       repo={r}
                       selected={r.id === selectedRepoId && multi.length === 0}
                       multi={multi.includes(r.id)}
+                      parent={parents.get(r.id)}
+                      onRename={() => void renameRepo(r)}
                       onClick={onRepoClick(r)}
                       onContext={contextFor(r)}
                       onDragStart={onRepoDragStart(r)}

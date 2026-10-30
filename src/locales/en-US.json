@@ -1,4 +1,18 @@
 {
+  "files": {
+    "title": "Repository files", "openFiles": "Open files", "refresh": "Refresh files", "retry": "Retry", "emptyDirectory": "Empty directory",
+    "truncated": "This directory exceeds 10,000 entries; some entries are hidden.", "symlink": "Symbolic link or special file; use an external editor.",
+    "select": "Select a file to view or edit", "save": "Save", "reload": "Reload from disk", "discard": "Discard changes", "close": "Close file",
+    "external": "Open in external editor", "unsaved": "Unsaved changes", "discardBody": "Reloading will discard unsaved changes to this file.",
+    "diskChanged": "The disk file changed. Your edits are preserved. Review external changes before saving.",
+    "exitBody": "These files have unsaved changes.", "saveAll": "Save all and quit", "discardExit": "Discard changes and quit",
+    "readOnly": { "binary": "Binary or non-UTF-8 file. Use an external editor.", "tooLarge": "File exceeds 2 MiB. Use an external editor.", "mixedEol": "Mixed line endings. Preview only to preserve the original format.", "permissions": "No write permission. Preview only." }
+  },
+  "terminal": {
+    "title": "Terminal", "session": "Terminal {{n}}", "new": "New terminal", "close": "Close terminal session", "clear": "Clear terminal display",
+    "external": "Open in external terminal", "selectRepo": "Select a repository to open a terminal.", "noSession": "No open terminal sessions.",
+    "starting": "Starting", "running": "Running", "exited": "Exited", "failed": "Failed"
+  },
   "common": {
     "ok": "OK",
     "cancel": "Cancel",
@@ -25,6 +39,7 @@
     "hint": "Run the command above in the project root; the GitManagement window opens automatically."
   },
   "nav": {
+    "files": "Files",
     "changes": "Changes",
     "log": "Log",
     "branches": "Branches",
@@ -68,6 +83,11 @@
     "ctxOpenFiles": "Open in file manager",
     "ctxOpenTerminal": "Open in terminal",
     "ctxRename": "Rename…",
+    "renameRepo": "Rename {{name}}",
+    "displayName": "Display name",
+    "nameRequired": "Enter a display name",
+    "scanChildren": "Scan nested repositories…",
+    "nestedIn": "Nested repository inside {{name}}",
     "scan": "Scan folder…"
   },
   "overview": {
@@ -176,6 +196,7 @@
   },
   "diff": {
     "sideBySide": "Side-by-side",
+    "horizontalScroll": "Scroll both code panes horizontally",
     "unified": "Unified",
     "whitespace": {
       "none": "Do not ignore whitespace",
@@ -228,6 +249,7 @@
     "checkout": "Checkout",
     "newBranch": "New branch…",
     "newBranchFrom": "New branch from here…",
+    "newBranchFromName": "New branch from {{name}}…",
     "merge": "Merge into current",
     "rebase": "Rebase current onto this",
     "rename": "Rename…",
@@ -253,6 +275,11 @@
     "info": "Info"
   },
   "branchDialog": {
+    "source": "Source branch or revision",
+    "head": "Current revision (HEAD)",
+    "custom": "Tag or commit…",
+    "revision": "Tag or commit",
+    "duplicate": "A local branch with this name already exists",
     "createTitle": "New branch",
     "name": "Branch name",
     "startPoint": "Start point (branch or commit, empty for HEAD)",
@@ -441,6 +468,11 @@
     "succeeded": "{{task}} done"
   },
   "errors": {
+    "files": {
+      "unsafePath": "Cannot access Git metadata or symbolic links.", "notFile": "This path is not a regular file.",
+      "conflict": "The file changed on disk. Your edits are preserved. Review external changes before reloading.", "readOnly": "This file is read-only.", "tooLarge": "File exceeds the editor's 2 MiB limit."
+    },
+    "terminal": { "failed": "Terminal operation failed.", "closed": "Terminal session has ended.", "limit": "A maximum of 12 terminal sessions can be open." },
     "unknown": "Unknown error",
     "internal": "Internal error",
     "db": {
@@ -744,10 +776,17 @@
     "syncNote": "Force targets are pushed without force; repositories without rules are skipped."
   },
   "branchPopup": {
+    "loadFailed": "Unable to load branches",
+    "empty": "No matching branches",
     "title": "Branches",
     "actions": "Actions",
-    "checkoutRev": "Checkout tag or revision"
+    "checkoutRev": "Checkout tag or revision",
+    "repositories": "Current repository and nested repositories",
+    "discovering": "Discovering nested repositories…",
+    "discoverFailed": "Failed to discover nested repositories",
+    "addAndManage": "Add and manage this nested repository"
   },
+  "layout": { "resize": "Resize panels" },
   "repoSwitcher": {
     "title": "Switch repository"
   },
@@ -832,7 +871,9 @@
     "root": "Parent folder",
     "scan": "Scan",
     "scanning": "Scanning…",
-    "skipHint": "Hidden folders, node_modules, target etc. are skipped; nested folders inside a repository are not scanned.",
+    "skipHint": "Scans all folders within the depth, including nested repositories; excludes .git metadata and does not follow directory symlinks.",
+    "nested": "Nested",
+    "linked": "worktree / submodule",
     "someFailed": "{{count}} repositories failed to import",
     "title": "Scan folder",
     "truncated": "Too many results; showing the first 2000"

@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// 扫描时跳过的目录（依赖/构建产物，通常很大且不会包含要管理的仓库）
-const SKIP_DIRS: &[&str] = &["node_modules", "target", "build", "dist", ".gradle", ".idea", "Pods", "vendor", ".venv", "venv", "__pycache__"];
 const SCAN_LIMIT: usize = 2000;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -18,7 +16,7 @@ pub struct FoundRepo {
     pub linked: bool,
 }
 
-/// 递归发现 git 仓库（R-03）。找到仓库后不再深入其内部（子模块由 M4 处理）。
+/// 递归发现 git 仓库，包括嵌套仓库和已检出的 submodule/worktree。
 /// depth=1 表示只检查 root 的直接子目录；root 自身是仓库时也会返回。
 pub fn scan_repos(root: &Path, depth: u32) -> AppResult<(Vec<FoundRepo>, bool)> {
     if !root.is_dir() {
@@ -43,7 +41,6 @@ fn walk(dir: &Path, level: u32, max: u32, out: &mut Vec<FoundRepo>, truncated: &
             name: dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
             linked: dotgit.is_file(),
         });
-        return;
     }
     if level >= max {
         return;
@@ -55,12 +52,13 @@ fn walk(dir: &Path, level: u32, max: u32, out: &mut Vec<FoundRepo>, truncated: &
         .map(|e| e.path())
         .filter(|p| {
             let n = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            !(n.starts_with('.') || SKIP_DIRS.contains(&n.as_str()))
+            n != ".git"
         })
         .collect();
     subs.sort();
     for s in subs {
         walk(&s, level + 1, max, out, truncated);
+        if *truncated { break; }
     }
 }
 
@@ -209,14 +207,77 @@ mod tests {
         let (found, truncated) = scan_repos(root, 2).unwrap();
         let names: Vec<&str> = found.iter().map(|f| f.name.as_str()).collect();
         assert!(!truncated);
-        // a/inner 在仓库 a 内部，不再深入；deep/x/c 超过深度；node_modules 与隐藏目录跳过
-        assert_eq!(names, vec!["a", "b", "wt"]);
-        assert!(found[2].linked);
+        // 深度内的隐藏目录、依赖目录、嵌套仓库都包含；deep/x/c 超过深度。
+        assert_eq!(names, vec!["r", "a", "inner", "b", "pkg", "wt"]);
+        assert!(found[5].linked);
 
         let (found, _) = scan_repos(root, 4).unwrap();
-        assert_eq!(found.len(), 4);
+        assert_eq!(found.len(), 7);
         // 根目录本身是仓库
         let (found, _) = scan_repos(&root.join("a"), 3).unwrap();
+        assert_eq!(found.len(), 2);
+    }
+
+    #[test]
+    fn respects_depth_and_never_scans_git_metadata() {
+        let d = tempfile::tempdir().unwrap();
+        for p in [".git/objects/fake/.git", "modules/one/.git", "modules/one/deeper/.git", "ordinary/deep"] {
+            std::fs::create_dir_all(d.path().join(p)).unwrap();
+        }
+        let (found, _) = scan_repos(d.path(), 1).unwrap();
         assert_eq!(found.len(), 1);
+        let (found, _) = scan_repos(d.path(), 2).unwrap();
+        assert_eq!(found.len(), 2);
+        let (found, _) = scan_repos(d.path(), 3).unwrap();
+        assert_eq!(found.len(), 3);
+        assert!(found.iter().all(|r| !r.path.contains("objects")));
+        assert!(scan_repos(&d.path().join("absent"), 3).is_err());
+    }
+
+    #[test]
+    fn discovers_real_submodules_and_worktrees_inside_a_repository() {
+        let d = tempfile::tempdir().unwrap();
+        let project = d.path().join("project");
+        let source = d.path().join("source");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            let out = Command::new("git").current_dir(dir)
+                .args(["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"])
+                .args(args).output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        };
+        for dir in [&project, &source] {
+            git(dir, &["init", "-q", "-b", "main"]);
+            git(dir, &["commit", "--allow-empty", "-qm", "initial"]);
+        }
+        git(&project, &["-c", "protocol.file.allow=always", "submodule", "add", source.to_str().unwrap(), "modules/sub"]);
+        git(&project, &["worktree", "add", "-b", "linked", "worktrees/linked"]);
+        let (found, truncated) = scan_repos(&project, 2).unwrap();
+        assert!(!truncated);
+        assert_eq!(found.len(), 3);
+        assert_eq!(found.iter().filter(|r| r.linked).count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_directory_symlink_loops() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("a/.git")).unwrap();
+        std::os::unix::fs::symlink(d.path(), d.path().join("a/loop")).unwrap();
+        let (found, truncated) = scan_repos(d.path(), 8).unwrap();
+        assert_eq!(found.len(), 1);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn stops_at_the_result_limit() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".git")).unwrap();
+        let mut out = vec![FoundRepo { path: String::new(), name: String::new(), linked: false }; SCAN_LIMIT];
+        let mut truncated = false;
+        walk(d.path(), 0, 8, &mut out, &mut truncated);
+        assert!(truncated);
+        assert_eq!(out.len(), SCAN_LIMIT);
     }
 }
