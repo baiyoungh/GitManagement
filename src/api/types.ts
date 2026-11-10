@@ -274,6 +274,8 @@ export interface CloneReq {
   dest: string;
   branch?: string | null;
   depth?: number | null;
+  /** 可选的显示名称；留空时使用目标目录名 */
+  name?: string | null;
 }
 
 export type ConfigScope = 'global' | 'local';

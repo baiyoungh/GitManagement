@@ -19,6 +19,7 @@ export function AddRepoDialog() {
   const selectRepo = useApp((s) => s.selectRepo);
   const toast = useApp((s) => s.toast);
   const [path, setPath] = useState('');
+  const [name, setName] = useState('');
   const [check, setCheck] = useState<PathCheck | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +35,7 @@ export function AddRepoDialog() {
   const submit = async (init: boolean) => {
     setBusy(true);
     try {
-      const repo = await api.repo.add(path.trim(), init);
+      const repo = await api.repo.add(path.trim(), init, name);
       await queryClient.invalidateQueries({ queryKey: keys.repos });
       selectRepo(repo.id);
       toast('success', t('addRepo.added', { name: repo.name }));
@@ -46,6 +47,8 @@ export function AddRepoDialog() {
     }
   };
 
+  /** 留空时后端使用仓库根目录的文件夹名 */
+  const defaultName = (check?.root ?? path.trim()).split(/[\\/]/).filter(Boolean).pop() ?? '';
   const canAdd = check?.exists && check.isRepo && !check.registered;
   return (
     <Modal
@@ -72,6 +75,9 @@ export function AddRepoDialog() {
           <button onClick={() => pickDir().then((p) => p && setPath(p))}>{t('common.browse')}</button>
         </div>
       </Field>
+      <Field label={t('addRepo.name')} hint={t('addRepo.nameHint')}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={defaultName} />
+      </Field>
       {check && !check.exists && <p className="error-text">{t('addRepo.notExist')}</p>}
       {check?.exists && !check.isRepo && <p className="warn-text">{t('addRepo.notRepo')}</p>}
       {check?.registered && <p className="warn-text">{t('addRepo.registered')}</p>}
@@ -94,6 +100,7 @@ export function CloneDialog() {
   const [parent, setParent] = useState(settings.cloneParent ?? '');
   const [dirName, setDirName] = useState('');
   const [dirTouched, setDirTouched] = useState(false);
+  const [name, setName] = useState('');
   const [branch, setBranch] = useState('');
   const [depth, setDepth] = useState('');
 
@@ -106,11 +113,11 @@ export function CloneDialog() {
 
   const submit = async () => {
     try {
-      await api.task.clone({ url: url.trim(), dest, branch: branch.trim() || null, depth: depth ? Number(depth) : null });
+      await api.task.clone({ url: url.trim(), dest, branch: branch.trim() || null, depth: depth ? Number(depth) : null, name });
       void api.settings.set('cloneParent', parent);
       useApp.getState().patchSetting('cloneParent', parent);
       useApp.getState().setBottom(true, 'tasks');
-      toast('info', t('clone.started', { name: dirName }));
+      toast('info', t('clone.started', { name: name.trim() || dirName }));
       close();
     } catch (e) {
       reportError(e);
@@ -149,6 +156,9 @@ export function CloneDialog() {
           }}
           className="mono"
         />
+      </Field>
+      <Field label={t('clone.name')} hint={t('clone.nameHint')}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={dirName} />
       </Field>
       <div className="field-row">
         <Field label={t('clone.branch')}>

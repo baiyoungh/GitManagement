@@ -144,6 +144,12 @@ const PATHS = {
   ),
   dot: <circle cx="12" cy="12" r="5" fill="currentColor" stroke="none" />,
   circle: <circle cx="12" cy="12" r="5" />,
+  undo: (
+    <>
+      <path d="M3 7v6h6" />
+      <path d="M3.5 13a9 9 0 1 0 2.1-9.4L3 7" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof PATHS;

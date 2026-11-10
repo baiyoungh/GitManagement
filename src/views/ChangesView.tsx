@@ -200,6 +200,8 @@ export function ChangesView({ repoId }: { repoId: string }) {
   };
 
   const includedPaths = allFiles.filter((f) => f.kind !== 'conflicted' && checked(f.path) && !(staging && f.staged)).map((f) => f.path);
+  /** 勾选且可直接回滚的文件（冲突文件需先解决，不能回滚） */
+  const rollbackPaths = allFiles.filter((f) => f.kind !== 'conflicted' && checked(f.path)).map((f) => f.path);
   const partialFiles: PartialFile[] = includedPaths
     .filter((p) => isPartial(p) && byPath.get(p) && partialEligible(byPath.get(p)!))
     .map((p) => ({ path: p, hunks: toRequest(selOf(p)!) }));
@@ -345,6 +347,9 @@ export function ChangesView({ repoId }: { repoId: string }) {
       },
       { label: t('changes.ctxShowDiff'), disabled: node.isDir, shortcut: `${mod}D`, onClick: () => setSelectedKey(node.key) },
       { label: t('changes.ctxRollback'), shortcut: isMac ? '⌘⌥Z' : 'Ctrl+Alt+Z', onClick: () => rollback(paths) },
+      ...(rollbackPaths.length > 1
+        ? [{ label: t('changes.ctxRollbackSelected', { count: rollbackPaths.length }), onClick: () => rollback(rollbackPaths) }]
+        : []),
       { separator: true },
       {
         label: t('changes.ctxAddToVcs'),
@@ -434,6 +439,7 @@ export function ChangesView({ repoId }: { repoId: string }) {
         },
       },
       { label: t('changes.ctxStash'), disabled: !hasHead || paths.length === 0 || g.key === 'conflicts', onClick: () => openDialog({ type: 'stashCreate', repoId, paths }) },
+      { label: t('changes.ctxRollbackGroup', { count: paths.length }), disabled: paths.length === 0 || g.key === 'conflicts', onClick: () => rollback(paths) },
       { separator: true },
       { label: t('changelist.new'), disabled: staging, onClick: () => newList([]) },
     ];
@@ -562,6 +568,15 @@ export function ChangesView({ repoId }: { repoId: string }) {
             onClick={() => setCollapsed(new Set(groups.flatMap((g) => allDirKeys(g.nodes))))}
           >
             <Icon name="collapseAll" />
+          </button>
+          <button
+            className="icon-btn"
+            title={t('changes.rollbackSelected', { count: rollbackPaths.length })}
+            aria-label={t('changes.rollbackSelected', { count: rollbackPaths.length })}
+            disabled={rollbackPaths.length === 0}
+            onClick={() => void rollback(rollbackPaths)}
+          >
+            <Icon name="undo" />
           </button>
           <select value={flat ? 'flat' : 'tree'} onChange={(e) => setPref('changes.flat', String(e.target.value === 'flat'))} aria-label="view">
             <option value="tree">{t('changes.viewTree')}</option>

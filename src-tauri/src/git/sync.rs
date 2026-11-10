@@ -24,6 +24,8 @@ pub struct CloneReq {
     pub dest: String,
     pub branch: Option<String>,
     pub depth: Option<u32>,
+    /// 可选的显示名称；留空时使用目标目录名
+    pub name: Option<String>,
 }
 
 pub fn clone(git: &GitRunner, req: &CloneReq, cancel: &CancelToken, progress: Option<ProgressFn>) -> AppResult<()> {

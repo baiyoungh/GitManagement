@@ -53,3 +53,35 @@ it('opens nested scanning at the repository root and supports F2 rename', async 
   fireEvent.keyDown(row, { key: 'F2' });
   expect(screen.getByRole('textbox', { name: '显示名称' })).toBeTruthy();
 });
+
+/** WebKit 在 dragover 期间读不到自定义 dataTransfer 类型，因此这里模拟一个空的 dataTransfer */
+function dragData() {
+  const store: Record<string, string> = {};
+  return {
+    types: [] as string[],
+    effectAllowed: '',
+    setData: (type: string, value: string) => { store[type] = value; },
+    getData: (type: string) => store[type] ?? '',
+  } as unknown as DataTransfer;
+}
+
+it('moves a repository to another group by dragging it onto that group', async () => {
+  vi.mocked(api.repo.list).mockResolvedValue([
+    { id: 'a', name: 'Alpha', path: '/w/a', groupId: 'g1', missing: false },
+    { id: 'b', name: 'Beta', path: '/w/b', groupId: 'g2', missing: false },
+  ] as never);
+  vi.mocked(api.group.list).mockResolvedValue([
+    { id: 'g1', name: 'Group One', sort: 0, collapsed: false },
+    { id: 'g2', name: 'Group Two', sort: 1, collapsed: false },
+  ] as never);
+  const move = vi.spyOn(api.group, 'moveRepos').mockResolvedValue();
+  show();
+  const repo = (await screen.findByText('Alpha')).closest('li')!;
+  const target = screen.getByRole('button', { name: /Group Two/ }).closest('section')!;
+  const data = dragData();
+  fireEvent.dragStart(repo, { dataTransfer: data });
+  fireEvent.dragOver(target, { dataTransfer: data });
+  fireEvent.drop(target, { dataTransfer: data });
+  await waitFor(() => expect(move).toHaveBeenCalledWith('g2', ['b', 'a']));
+  expect(api.repo.list).toHaveBeenCalledTimes(2);
+});

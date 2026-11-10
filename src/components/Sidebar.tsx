@@ -16,6 +16,14 @@ import { parentRepo, repoFolder } from '../lib/repoPaths';
 const DND_REPO = 'application/x-gm-repo';
 const DND_GROUP = 'application/x-gm-group';
 
+/** 正在拖拽的对象。WebKit 在 dragover 期间不保证能读到 dataTransfer 的自定义数据，因此同时记在内存里 */
+type DragPayload = { kind: 'repo'; ids: string[] } | { kind: 'group'; id: string };
+
+let activeDrag: DragPayload | null = null;
+
+const isRepoDrag = (e: React.DragEvent) => activeDrag?.kind === 'repo' || e.dataTransfer.types.includes(DND_REPO);
+const isGroupDrag = (e: React.DragEvent) => activeDrag?.kind === 'group' || e.dataTransfer.types.includes(DND_GROUP);
+
 function RepoItem(props: {
   repo: RepoView;
   selected: boolean;
@@ -25,6 +33,7 @@ function RepoItem(props: {
   onClick: (e: React.MouseEvent) => void;
   onContext: (e: React.MouseEvent) => void;
   onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
   onDrop: (e: React.DragEvent) => void;
 }) {
   const { t } = useTranslation();
@@ -44,8 +53,11 @@ function RepoItem(props: {
           : t('status.clean');
   return (
     <li
+      draggable
+      onDragStart={props.onDragStart}
+      onDragEnd={props.onDragEnd}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(DND_REPO)) return;
+        if (!isRepoDrag(e)) return;
         e.preventDefault();
         e.stopPropagation();
         setOver(true);
@@ -64,8 +76,6 @@ function RepoItem(props: {
         onKeyDown={(e) => {
           if (e.key === 'F2') { e.preventDefault(); props.onRename(); }
         }}
-        draggable
-        onDragStart={props.onDragStart}
         title={repo.path}
         aria-current={props.selected ? 'true' : undefined}
         aria-pressed={props.multi || undefined}
@@ -176,22 +186,35 @@ export function Sidebar() {
   };
 
   // ---------- 拖拽 ----------
+  const endDrag = () => {
+    activeDrag = null;
+    setDragGroup(null);
+  };
   const onRepoDragStart = (repo: RepoView) => (e: React.DragEvent) => {
     const ids = multi.includes(repo.id) ? multi : [repo.id];
+    activeDrag = { kind: 'repo', ids };
     e.dataTransfer.setData(DND_REPO, JSON.stringify(ids));
+    e.dataTransfer.setData('text/plain', repo.name);
     e.dataTransfer.effectAllowed = 'move';
+  };
+  /** 从内存或 dataTransfer 取出被拖动的仓库 id（WebKit 在 drop 前可能读不到自定义类型） */
+  const draggedIds = (e: React.DragEvent): string[] => {
+    if (activeDrag?.kind === 'repo') return activeDrag.ids;
+    try {
+      const ids = JSON.parse(e.dataTransfer.getData(DND_REPO)) as unknown;
+      return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
   };
   /** 把拖动的仓库放进分组，插在 beforeId 之前（为空则放到末尾） */
   const dropRepos = async (e: React.DragEvent, sec: Section, beforeId: string | null) => {
-    if (!e.dataTransfer.types.includes(DND_REPO) || sec.targetGroup === undefined) return;
+    if (sec.targetGroup === undefined || !isRepoDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
-    let ids: string[] = [];
-    try {
-      ids = JSON.parse(e.dataTransfer.getData(DND_REPO)) as string[];
-    } catch {
-      return;
-    }
+    const ids = draggedIds(e);
+    endDrag();
+    if (ids.length === 0) return;
     const members = all.filter((r) => (sec.targetGroup ? r.groupId === sec.targetGroup : !r.groupId || !groupList.some((g) => g.id === r.groupId)));
     const order = members.map((r) => r.id).filter((id) => !ids.includes(id));
     const at = beforeId ? order.indexOf(beforeId) : -1;
@@ -205,13 +228,14 @@ export function Sidebar() {
     }
   };
   const dropGroup = async (e: React.DragEvent, beforeId: string) => {
-    if (!e.dataTransfer.types.includes(DND_GROUP)) return;
+    if (!isGroupDrag(e)) return;
     e.preventDefault();
-    const id = e.dataTransfer.getData(DND_GROUP);
-    setDragGroup(null);
+    const id = activeDrag?.kind === 'group' ? activeDrag.id : e.dataTransfer.getData(DND_GROUP);
+    endDrag();
     if (!id || id === beforeId) return;
     const order = groupList.map((g) => g.id).filter((g) => g !== id);
-    order.splice(order.indexOf(beforeId), 0, id);
+    const at = order.indexOf(beforeId);
+    order.splice(at >= 0 ? at : order.length, 0, id);
     await api.group.reorder(order).catch(reportError);
     void refreshGroups();
   };
@@ -371,11 +395,11 @@ export function Sidebar() {
               key={sec.key}
               className={`repo-group ${dragGroup && g && dragGroup !== g.id ? 'group-drop' : ''}`}
               onDragOver={(e) => {
-                if (e.dataTransfer.types.includes(DND_REPO) && sec.targetGroup !== undefined) e.preventDefault();
-                if (e.dataTransfer.types.includes(DND_GROUP) && g) e.preventDefault();
+                if (isRepoDrag(e) && sec.targetGroup !== undefined) e.preventDefault();
+                if (isGroupDrag(e) && g) e.preventDefault();
               }}
               onDrop={(e) => {
-                if (g && e.dataTransfer.types.includes(DND_GROUP)) void dropGroup(e, g.id);
+                if (g && isGroupDrag(e)) void dropGroup(e, g.id);
                 else void dropRepos(e, sec, null);
               }}
             >
@@ -383,10 +407,13 @@ export function Sidebar() {
                 draggable={!!g}
                 onDragStart={(e) => {
                   if (!g) return;
+                  activeDrag = { kind: 'group', id: g.id };
                   e.dataTransfer.setData(DND_GROUP, g.id);
+                  e.dataTransfer.setData('text/plain', g.name);
+                  e.dataTransfer.effectAllowed = 'move';
                   setDragGroup(g.id);
                 }}
-                onDragEnd={() => setDragGroup(null)}
+                onDragEnd={endDrag}
                 onContextMenu={g ? groupMenu(g, sec.repos) : (e) => menu.open(e, [{ label: t('groups.new'), onClick: () => newGroup() }])}
               >
                 {g ? (
@@ -413,6 +440,7 @@ export function Sidebar() {
                       onClick={onRepoClick(r)}
                       onContext={contextFor(r)}
                       onDragStart={onRepoDragStart(r)}
+                      onDragEnd={endDrag}
                       onDrop={(e) => void dropRepos(e, sec, r.id)}
                     />
                   ))}

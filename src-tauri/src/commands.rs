@@ -318,7 +318,7 @@ pub async fn repo_check_path(state: State<'_, AppState>, path: String) -> AppRes
     .await
 }
 
-fn register(st: &AppState, app: &AppHandle, root: &str) -> AppResult<RepoRecord> {
+fn register(st: &AppState, app: &AppHandle, root: &str, name: Option<&str>) -> AppResult<RepoRecord> {
     if let Some(existing) = st.db.find_repo_by_path(root)? {
         return Ok(existing);
     }
@@ -337,7 +337,12 @@ fn register(st: &AppState, app: &AppHandle, root: &str) -> AppResult<RepoRecord>
             }
         }
     }
-    let rec = st.db.insert_repo(root, &dir_name(root), root_commit.as_deref())?;
+    let display = name
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| dir_name(root));
+    let rec = st.db.insert_repo(root, &display, root_commit.as_deref())?;
     if st.auto_refresh_enabled(&rec.id) {
         st.watcher.watch(app, &rec.id, Path::new(root));
     }
@@ -345,8 +350,15 @@ fn register(st: &AppState, app: &AppHandle, root: &str) -> AppResult<RepoRecord>
 }
 
 /// 添加本地仓库（R-01）。`init` 为 true 时对非仓库目录执行 git init。
+/// `name` 为可选的显示名称；留空时使用目录名。
 #[tauri::command]
-pub async fn repo_add(app: AppHandle, state: State<'_, AppState>, path: String, init: bool) -> AppResult<RepoRecord> {
+pub async fn repo_add(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    init: bool,
+    name: Option<String>,
+) -> AppResult<RepoRecord> {
     let st = state.inner().clone();
     blocking(move || {
         let p = PathBuf::from(&path);
@@ -361,7 +373,7 @@ pub async fn repo_add(app: AppHandle, state: State<'_, AppState>, path: String, 
             st.git.run(&p, &["init"], &RunOpts::default())?;
             out = st.git.run(&p, &["rev-parse", "--show-toplevel"], &RunOpts::read())?;
         }
-        register(&st, &app, &normalize_root(&out.text()))
+        register(&st, &app, &normalize_root(&out.text()), name.as_deref())
     })
     .await
 }
@@ -720,13 +732,19 @@ pub fn task_clone(app: AppHandle, state: State<'_, AppState>, req: CloneReq) -> 
     req.url = stripped.url;
     let st = state.inner().clone();
     let app2 = app.clone();
-    let name = dir_name(&req.dest);
+    let name = req
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| dir_name(&req.dest));
     let task_params = params(&[("name", name.as_str()), ("url", req.url.as_str())]);
     Ok(state.tasks.spawn(&app, None, "clone", task_params, move |cancel, progress| {
         sync::clone(&st.git, &req, cancel, Some(progress))?;
         // 用 git 给出的根目录登记，避免符号链接（如 macOS /tmp → /private/tmp）造成路径不一致
         let out = st.git.run(Path::new(&req.dest), &["rev-parse", "--show-toplevel"], &RunOpts::read())?;
-        let rec = register(&st, &app2, &normalize_root(&out.text()))?;
+        let rec = register(&st, &app2, &normalize_root(&out.text()), req.name.as_deref())?;
         Ok(rec.id)
     }))
 }
@@ -1245,7 +1263,7 @@ pub async fn repo_add_many(app: AppHandle, state: State<'_, AppState>, paths: Ve
         for p in paths {
             let r = (|| {
                 let out = st.git.run(Path::new(&p), &["rev-parse", "--show-toplevel"], &RunOpts::read())?;
-                let rec = register(&st, &app, &normalize_root(&out.text()))?;
+                let rec = register(&st, &app, &normalize_root(&out.text()), None)?;
                 if let Some(g) = &group_id {
                     st.db.set_repo_group(&rec.id, Some(g))?;
                 }

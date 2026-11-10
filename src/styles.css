@@ -1959,6 +1959,13 @@ fieldset .field-row {
 .repo-group h3[draggable='true'] {
   cursor: grab;
 }
+/* WebKit（macOS 应用内、Safari）不会仅凭 draggable 属性拖动按钮等表单控件，需显式声明 */
+.repo-row[draggable='true'],
+.repo-row[draggable='true'] *,
+.repo-group h3[draggable='true'],
+.repo-group h3[draggable='true'] * {
+  -webkit-user-drag: element;
+}
 .repo-group.group-drop h3 {
   outline: 1px dashed var(--accent);
 }
