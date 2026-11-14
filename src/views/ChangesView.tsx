@@ -9,6 +9,7 @@ import { api } from '../api';
 import type { Changelist, FileChange, PartialFile, Rev, StatusResult } from '../api/types';
 import { invalidateRepo, keys, reportError, useChangelists, useChecked, useMessages, useRepos, useStatus } from '../api/queries';
 import { useApp } from '../stores/appStore';
+import { useAuth } from '../stores/authStore';
 import { TriCheckbox, useContextMenu, type MenuItem } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { DiffViewer, type DiffTarget } from './DiffViewer';
@@ -497,6 +498,7 @@ export function ChangesView({ repoId }: { repoId: string }) {
   // ---------- 快捷键：⌘K 提交、⌘D 差异、⌘⌥Z 回滚、⌘R 刷新 ----------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (Object.keys(useAuth.getState().challenges).length) return;
       if ((e.target as HTMLElement | null)?.closest('.terminal-host')) return;
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (!mod) return;

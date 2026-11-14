@@ -23,17 +23,32 @@ const LOG_CAPACITY: usize = 1000;
 const LOG_OUTPUT_LIMIT: usize = 4000;
 
 #[derive(Clone, Default)]
-pub struct CancelToken(Arc<AtomicBool>);
+pub struct CancelToken {
+    flag: Arc<AtomicBool>,
+    parent: Option<Arc<AtomicBool>>,
+    pub auth: Option<Arc<crate::auth::AuthContext>>,
+}
 
 impl CancelToken {
     pub fn new() -> Self {
         Self::default()
     }
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.flag.store(true, Ordering::SeqCst);
     }
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.flag.load(Ordering::SeqCst) || self.parent.as_ref().map(|p| p.load(Ordering::SeqCst)).unwrap_or(false)
+    }
+    pub fn cancel_task(&self) {
+        self.cancel();
+        if let Some(parent) = &self.parent { parent.store(true, Ordering::SeqCst); }
+    }
+    pub fn with_auth(&self, auth: Arc<crate::auth::AuthContext>) -> Self {
+        Self { flag: self.flag.clone(), parent: self.parent.clone(), auth: Some(auth) }
+    }
+    /// Invocation-local cancellation also observes its parent task, but never cancels it on drop.
+    pub fn child(&self) -> Self {
+        Self { flag: Arc::new(AtomicBool::new(false)), parent: Some(self.flag.clone()), auth: self.auth.clone() }
     }
 }
 
@@ -47,6 +62,8 @@ pub struct RunOpts {
     pub progress: Option<ProgressFn>,
     /// 只读查询：设置 GIT_OPTIONAL_LOCKS=0，避免与写操作抢 index.lock
     pub read_only: bool,
+    /// Only presentation output may be secret-redacted. Never alter machine-readable refs/object IDs.
+    pub redact_stdout: bool,
     /// 路径参数按字面量处理（GIT_LITERAL_PATHSPECS=1），文件名中的 `*?[` 不会被当作通配符
     pub literal_pathspecs: bool,
     /// 视为成功的非 0 退出码（例如 `diff --no-index` 有差异时返回 1）
@@ -101,6 +118,7 @@ pub type LogSink = Arc<dyn Fn(&CommandLogEntry) + Send + Sync>;
 pub struct GitRunner {
     git: RwLock<PathBuf>,
     askpass: Option<PathBuf>,
+    ssh_config: Option<PathBuf>,
     log: Mutex<VecDeque<CommandLogEntry>>,
     next_id: AtomicU64,
     sink: RwLock<Option<LogSink>>,
@@ -111,11 +129,17 @@ impl GitRunner {
         Self {
             git: RwLock::new(git),
             askpass: std::env::current_exe().ok(),
+            ssh_config: None,
             log: Mutex::new(VecDeque::with_capacity(LOG_CAPACITY)),
             next_id: AtomicU64::new(1),
             sink: RwLock::new(None),
         }
     }
+
+    /// Override the bundled helper path (used by integration tests with a real application binary).
+    pub fn set_askpass_path(&mut self, path: PathBuf) { self.askpass = Some(path); }
+
+    pub fn set_ssh_config(&mut self, path: PathBuf) { self.ssh_config = Some(path); }
 
     pub fn git_path(&self) -> PathBuf {
         self.git.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -143,7 +167,8 @@ impl GitRunner {
         if out.code == 0 || opts.ok_codes.contains(&out.code) {
             Ok(out)
         } else {
-            Err(classify(&out.stderr, &out.text()))
+            let stdout = opts.cancel.as_ref().and_then(|t| t.auth.as_ref()).map(|a| a.scrub(&out.text())).unwrap_or_else(|| redact(&out.text()));
+            Err(classify(&out.stderr, &stdout))
         }
     }
 
@@ -152,6 +177,32 @@ impl GitRunner {
         let git = self.git_path();
         let mut cmd = Command::new(&git);
         cmd.arg("-c").arg("core.quotepath=false").arg("-c").arg("color.ui=false");
+        let auth = opts.cancel.as_ref().and_then(|token| token.auth.clone());
+        let invocation_token = opts.cancel.clone().unwrap_or_default().child();
+        let invocation = if let (Some(context), Some(exe)) = (&auth, &self.askpass) {
+            let invocation = crate::auth::Invocation::start_in(context.clone(), invocation_token.clone(), git.clone(), cwd.to_path_buf())?;
+            // The leading ! is Git's documented helper shell syntax. Quote only the
+            // executable (never user data); answers use the helper's stdin protocol.
+            let exe = exe.to_string_lossy().replace('\\', "/").replace('\'', "'\\''");
+            let helper = format!("!'{}' --gitmanagement-credential", exe);
+            cmd.arg("-c").arg("credential.helper=").arg("-c").arg(format!("credential.helper={}", helper));
+            cmd.env(crate::auth::ENDPOINT_ENV, &invocation.endpoint).env(crate::auth::NONCE_ENV, &invocation.nonce);
+            // Respect explicit custom SSH transports instead of silently replacing
+            // plink, corporate wrappers, or their security/configuration semantics.
+            let mut config_command = Command::new(&git);
+            config_command.current_dir(cwd).args(["config", "--get", "core.sshCommand"]);
+            #[cfg(windows)] { use std::os::windows::process::CommandExt; config_command.creation_flags(0x08000000); }
+            let configured = config_command.output()
+                .ok().filter(|out| out.status.success()).map(|out| !out.stdout.is_empty()).unwrap_or(false);
+            let custom = std::env::var_os("GIT_SSH_COMMAND").is_some() || std::env::var_os("GIT_SSH").is_some() || configured;
+            if !custom {
+                cmd.env("GIT_SSH_COMMAND", format!("'{}' --gitmanagement-ssh", exe))
+                    .env("GIT_SSH_VARIANT", "ssh")
+                    .env(crate::ssh::INTERACTIVE_ENV, if context.interactive { "1" } else { "0" });
+                if let Some(config) = &self.ssh_config { cmd.env(crate::ssh::CONFIG_ENV, config); }
+            }
+            Some(invocation)
+        } else { None };
         cmd.args(args);
         cmd.current_dir(cwd);
         cmd.env("GIT_TERMINAL_PROMPT", "0")
@@ -169,6 +220,11 @@ impl GitRunner {
         }
         if let Some(a) = &self.askpass {
             cmd.env("GIT_ASKPASS", a).env(askpass::ENV_FLAG, "1");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
         }
         #[cfg(windows)]
         {
@@ -215,6 +271,13 @@ impl GitRunner {
         });
         let mut stderr_pipe = child.stderr.take();
         let progress = opts.progress.clone();
+        let scrub_context = auth.clone();
+        let progress = progress.map(|callback| {
+            Arc::new(move |percent, line: &str| {
+                let clean = scrub_context.as_ref().map(|a| a.scrub(line)).unwrap_or_else(|| redact(line));
+                callback(percent, &clean);
+            }) as ProgressFn
+        });
         let stderr_handle = std::thread::spawn(move || read_stderr(stderr_pipe.as_mut(), progress));
 
         let mut cancelled = false;
@@ -225,18 +288,27 @@ impl GitRunner {
                     break st;
                 }
                 if token.is_cancelled() {
-                    let _ = child.kill();
+                    invocation_token.cancel();
+                    kill_tree(&mut child);
                     cancelled = true;
                     break child.wait()?;
                 }
                 std::thread::sleep(Duration::from_millis(30));
             },
         };
+        cancelled |= opts.cancel.as_ref().map(|t| t.is_cancelled()).unwrap_or(false);
+        let auth_error = invocation.as_ref().and_then(|i| i.error());
+        invocation_token.cancel();
+        drop(invocation);
         if let Some(h) = stdin_handle {
             let _ = h.join();
         }
         let stdout = stdout_handle.join().unwrap_or_default();
         let stderr = redact(&stderr_handle.join().unwrap_or_default());
+        let stderr = auth.as_ref().map(|a| a.scrub(&stderr)).unwrap_or(stderr);
+        let stdout = if let (true, Some(context), Ok(text)) = (opts.redact_stdout, &auth, std::str::from_utf8(&stdout)) {
+            context.scrub(text).into_bytes()
+        } else { stdout };
         let code = status.code().unwrap_or(-1);
 
         self.push_log(CommandLogEntry {
@@ -251,6 +323,9 @@ impl GitRunner {
 
         if cancelled {
             return Err(AppError::new("task.cancelled"));
+        }
+        if code != 0 {
+            if let Some(error) = auth_error { return Err(error); }
         }
         Ok(GitOutput { code, stdout, stderr })
     }
@@ -323,12 +398,38 @@ pub fn parse_percent(line: &str) -> Option<u8> {
     digits.parse::<u32>().ok().map(|v| v.min(100) as u8)
 }
 
+pub(crate) fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        extern "C" { fn kill(pid: i32, sig: i32) -> i32; }
+        // Every Git command is spawned in a new process group; negative PID
+        // targets only that group's helper/ssh descendants, not the application.
+        unsafe { kill(-(child.id() as i32), 9); }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Some(root) = std::env::var_os("SystemRoot") {
+            let _ = Command::new(PathBuf::from(root).join("System32/taskkill.exe"))
+                .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                .creation_flags(0x08000000).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        }
+    }
+    let _ = child.kill();
+}
+
 /// 识别常见 git 错误，转换为错误码；git 原文保留在 detail 中（specs/07 第 1 节）
 pub fn classify(stderr: &str, stdout: &str) -> AppError {
     let combined = format!("{}\n{}", stderr, stdout);
     let s = combined.to_ascii_lowercase();
     let has = |p: &str| s.contains(p);
-    let code = if has("authentication failed")
+    let code = if has("remote host identification has changed") || has("offending") && has("host key") {
+        "ssh.hostKeyChanged"
+    } else if has("host key verification failed") {
+        "ssh.hostKeyFailed"
+    } else if has("gitmanagement: openssh unavailable") {
+        "ssh.notFound"
+    } else if has("authentication failed")
         || has("could not read username")
         || has("could not read password")
         || has("invalid username or password")

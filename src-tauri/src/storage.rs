@@ -72,6 +72,21 @@ const MIGRATIONS: &[&str] = &[
       PRIMARY KEY (repo_id, path)
     );
     "#,
+    // v3: enumerable credential metadata only; secrets remain in the OS keyring.
+    r#"
+    CREATE TABLE credential_profile (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      username TEXT NOT NULL,
+      keyring_key TEXT NOT NULL UNIQUE
+    );
+    CREATE INDEX idx_credential_origin ON credential_profile(url);
+    CREATE TABLE credential_key_cleanup (
+      keyring_key TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -150,7 +165,7 @@ impl Db {
         Ok(Self { conn: Mutex::new(conn) })
     }
 
-    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -658,6 +673,21 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_migration_preserves_v2_metadata() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..2] { conn.execute_batch(sql).unwrap(); }
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute("INSERT INTO setting (key, value) VALUES ('legacy', 'kept')", []).unwrap();
+        let db = Db::init(conn).unwrap();
+        assert_eq!(db.get_setting("legacy").unwrap().as_deref(), Some("kept"));
+        let conn = db.conn();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM credential_profile", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(version, MIGRATIONS.len() as i64);
+    }
 
     #[test]
     fn repo_crud_and_checked() {

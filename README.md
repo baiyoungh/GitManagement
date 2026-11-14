@@ -84,7 +84,8 @@ src/
 - 按规则同步：先执行 pull/双向目标（fetch → 当前分支按 Pull 策略合并/变基，非当前分支只允许快进），再逐个推送；每个目标独立，失败项可单独重试。拉取产生冲突时中断并进入冲突解决。force 目标默认不勾选，执行前单独确认，使用 `--force-with-lease`。
 - 三栏合并（specs/05）：结果栏初始为 Base，块级 » / « 应用、× 忽略、⚡ 应用所有非冲突改动；冲突块两侧都应用时按"先左后右"追加；双击结果栏进入自由编辑。块由 `diff3.rs` 根据 `:1:/:2:/:3:` 三个版本计算，不依赖文件中的冲突标记。
 - Rollback 删除的文件通过 `trash` crate 移入系统回收站。
-- 凭据：优先使用系统 git credential helper 与 SSH agent；应用自身作为 `GIT_ASKPASS`，只在 helper 未提供凭据时从系统钥匙串读取设置页保存的令牌。克隆 URL、Remote URL、规则中的 URL 目标里的 `user:token@` 都会被剥离后存入钥匙串。
+- 凭据：设置页可管理命名的 HTTP(S) 账号（同服务支持多个用户名），密码/Token 只存系统钥匙串；克隆可选已保存账号或输入仅本次凭据。默认自动认证先读取系统 Git helper，再匹配应用凭据；缺失时弹全局认证窗口，可选择认证有效后保存。单次命令通过应用 credential helper 桥接，不向外部 helper 写入临时答案、不修改全局 Git 配置。克隆前只读连接检查可在凭据被拒绝后补填，实际 clone 不自动重放。后台自动 Fetch/健康检查不弹窗。克隆 URL 内嵌密码会剥离为本次凭据；Remote/规则 URL 的旧转存行为保留。SSH 使用系统 OpenSSH 配置/agent，支持 SSH 登录密码、加密私钥口令和首次连接的主机指纹弹窗；密码/口令仅本次使用（禁用本次自动加入 agent 和 Apple UseKeychain 保存）。首次信任由用户核验 SHA256 指纹后明确确认，OpenSSH 可写入配置的 known_hosts；主机密钥变化直接拒绝，不自动删除旧记录。定时操作不询问、不自动信任。显式 GIT_SSH/GIT_SSH_COMMAND/core.sshCommand 自定义传输仍保持原行为，不承诺其弹窗兼容。
+- SSH 密钥：设置 › SSH 密钥 可生成 Ed25519 密钥对（默认 id_ed25519）、设置并确认口令、查看/复制公钥及指纹，或读取已有 .pub。生成固定写入本机 ~/.ssh，不覆盖已有私钥/公钥；口令通过临时鉴权 IPC 交给 ssh-keygen，不放命令参数/环境变量/配置，私钥不回传前端。公钥复制到 Git 平台 SSH Keys；自定义文件名可查看 IdentityFile 配置示例，应用不自动改写 SSH 配置或加入 agent。macOS/Unix 新目录700、私钥600；Windows 沿用 ssh-keygen 创建的 ACL，尚未实机验证。
 - Rust 侧只返回错误码 + 参数，界面文案全部在 `src/locales/`。
 - Tauri capabilities 只开放 `core:default` 与 `dialog:allow-open`，前端无 shell / 任意文件系统权限。
 

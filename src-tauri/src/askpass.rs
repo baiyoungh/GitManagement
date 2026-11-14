@@ -20,6 +20,9 @@ fn quoted(prompt: &str) -> Option<&str> {
 }
 
 pub fn run() -> i32 {
+    // Interactive invocations must use the broker helper; never fall back to a
+    // stale legacy keychain entry after the user cancelled or replaced an account.
+    if std::env::var_os(crate::auth::ENDPOINT_ENV).is_some() { return 1; }
     let prompt = std::env::args().nth(1).unwrap_or_default();
     let want_user = prompt.starts_with("Username");
     let want_pass = prompt.starts_with("Password");

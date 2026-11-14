@@ -6,34 +6,79 @@ import { useApp } from '../stores/appStore';
 import type { CheckState } from '../lib/changeTree';
 import { Icon } from './Icon';
 
+const modalStack: { element: HTMLDivElement; priority: number }[] = [];
+const topModal = () => [...modalStack].sort((a, b) => a.priority - b.priority).at(-1)?.element;
+function syncModalStack() {
+  const sorted = [...modalStack].sort((a, b) => a.priority - b.priority);
+  sorted.forEach(({ element }, index) => {
+    const top = index === sorted.length - 1;
+    element.inert = !top;
+    element.setAttribute('aria-modal', String(top));
+    if (element.parentElement) element.parentElement.style.zIndex = String(1000 + index);
+  });
+}
+const focusables = (element: HTMLElement) => Array.from(element.querySelectorAll<HTMLElement>(
+  'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled), [tabindex="0"]',
+));
+
 export function Modal(props: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   width?: number;
+  priority?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  const closeRef = useRef(props.onClose);
+  closeRef.current = props.onClose;
+  useLayoutEffect(() => {
+    const element = ref.current!;
     const prev = document.activeElement as HTMLElement | null;
-    const first = ref.current?.querySelector<HTMLElement>('input, textarea, select, button:not([data-close])');
-    first?.focus();
+    const entry = { element, priority: props.priority ?? 0 };
+    modalStack.push(entry);
+    syncModalStack();
+    const focusFirst = () => (focusables(element).find((item) => !item.hasAttribute('data-close')) ?? element).focus();
+    if (topModal() === element) focusFirst();
     const onKey = (e: KeyboardEvent) => {
+      if (topModal() !== element) return;
       if (e.key === 'Escape') {
-        e.stopPropagation();
-        props.onClose();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closeRef.current();
+      } else if (e.key === 'Tab') {
+        const items = focusables(element);
+        const first = items[0];
+        const last = items.at(-1);
+        if (!items.length) { e.preventDefault(); element.focus(); }
+        else if (e.shiftKey && (document.activeElement === first || !element.contains(document.activeElement))) {
+          e.preventDefault(); last?.focus();
+        } else if (!e.shiftKey && (document.activeElement === last || !element.contains(document.activeElement))) {
+          e.preventDefault(); first?.focus();
+        }
       }
     };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      prev?.focus?.();
+    const onFocus = (e: FocusEvent) => {
+      if (topModal() === element && !element.contains(e.target as Node)) focusFirst();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    window.addEventListener('keydown', onKey, true);
+    document.addEventListener('focusin', onFocus);
+    return () => {
+      const wasTop = topModal() === element;
+      modalStack.splice(modalStack.indexOf(entry), 1);
+      syncModalStack();
+      window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('focusin', onFocus);
+      if (wasTop) {
+        const top = topModal();
+        if (prev?.isConnected && (!top || top.contains(prev))) prev.focus();
+        else (top && (focusables(top)[0] ?? top))?.focus();
+      }
+    };
+  }, [props.priority]);
   return createPortal(
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" ref={ref} style={{ width: props.width ?? 520 }}>
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && topModal() === ref.current && closeRef.current()}>
+      <div className="modal" role="dialog" aria-label={typeof props.title === 'string' ? props.title : undefined} aria-modal="true" tabIndex={-1} ref={ref} style={{ width: props.width ?? 520 }}>
         <div className="modal-header">
           <h2>{props.title}</h2>
           <button className="icon-btn" data-close onClick={props.onClose} aria-label="close">
@@ -227,8 +272,14 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
 
 export function useContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const open = (e: { clientX: number; clientY: number; preventDefault: () => void }, items: MenuItem[]) => {
+  const open = (e: { clientX: number; clientY: number; preventDefault: () => void; currentTarget?: EventTarget | null }, items: MenuItem[]) => {
     e.preventDefault();
+    // WebKit may select a word on secondary click. Clear only selections in
+    // the clicked control, never text selected in an editor or input.
+    const target = e.currentTarget;
+    const selection = window.getSelection();
+    if (target instanceof HTMLElement && target.matches('button, h3, [role="tree"]')
+      && selection?.anchorNode && target.contains(selection.anchorNode)) selection.removeAllRanges();
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
   const element = menu ? <ContextMenu {...menu} onClose={() => setMenu(null)} /> : null;

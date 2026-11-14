@@ -530,7 +530,7 @@ pub fn delete_tag(repo: &Repo, name: &str) -> AppResult<()> {
 /// 推送标签；name 为 None 时推送全部标签
 pub fn push_tag(repo: &Repo, remote: &str, name: Option<&str>, cancel: &super::runner::CancelToken) -> AppResult<String> {
     check_arg("remote", remote)?;
-    let opts = RunOpts { cancel: Some(cancel.clone()), ..Default::default() };
+    let opts = RunOpts { cancel: Some(cancel.clone()), redact_stdout: true, ..Default::default() };
     let out = match name {
         Some(n) => {
             check_arg("tag", n)?;

@@ -35,6 +35,7 @@ use tauri::{AppHandle, State};
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Db>,
+    pub auth: Arc<crate::auth::AuthBroker>,
     pub git: Arc<GitRunner>,
     pub tasks: Arc<TaskManager>,
     pub watcher: Arc<WatchManager>,
@@ -113,6 +114,39 @@ pub async fn files_save(state: State<'_, AppState>, repo_id: String, path: Strin
         let lock = st.tasks.repo_lock(&repo_id);
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
         crate::files::save(&root, &path, &revision, &text)
+    }).await
+}
+
+#[tauri::command]
+pub async fn files_create(state: State<'_, AppState>, repo_id: String, path: String, directory: bool) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::create(&root, &path, directory)
+    }).await
+}
+
+#[tauri::command]
+pub async fn files_rename(state: State<'_, AppState>, repo_id: String, path: String, new_path: String) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::rename(&root, &path, &new_path)
+    }).await
+}
+
+#[tauri::command]
+pub async fn files_delete(state: State<'_, AppState>, repo_id: String, path: String) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::delete(&root, &path)
     }).await
 }
 
@@ -597,13 +631,15 @@ pub async fn branch_rename(state: State<'_, AppState>, repo_id: String, old: Str
 #[tauri::command]
 pub async fn branch_delete(state: State<'_, AppState>, repo_id: String, req: DeleteBranchReq) -> AppResult<()> {
     let st = state.inner().clone();
-    blocking(move || st.write(&repo_id, |r| branch::delete(r, &req))).await
+    let cancel = crate::git::runner::CancelToken::new().with_auth(st.auth.context(None, true));
+    blocking(move || st.write(&repo_id, |r| branch::delete_with_opts(r, &req, &RunOpts { cancel: Some(cancel), ..Default::default() }))).await
 }
 
 #[tauri::command]
 pub async fn branch_delete_remote(state: State<'_, AppState>, repo_id: String, remote: String, branch: String) -> AppResult<()> {
     let st = state.inner().clone();
-    blocking(move || st.write(&repo_id, |r| branch::delete_remote_branch(r, &remote, &branch))).await
+    let cancel = crate::git::runner::CancelToken::new().with_auth(st.auth.context(None, true));
+    blocking(move || st.write(&repo_id, |r| branch::delete_remote_branch_with_opts(r, &remote, &branch, &RunOpts { cancel: Some(cancel), ..Default::default() }))).await
 }
 
 #[tauri::command]
@@ -702,6 +738,57 @@ pub async fn credential_get_user(url: String) -> AppResult<Option<String>> {
     blocking(move || Ok(security::load_credential(&cred_key(&url)?).map(|(u, _)| u))).await
 }
 
+#[tauri::command]
+pub async fn ssh_keys_directory() -> AppResult<String> {
+    blocking(crate::ssh_keys::default_directory).await
+}
+
+#[tauri::command]
+pub async fn ssh_keys_list() -> AppResult<Vec<crate::ssh_keys::SshKeyInfo>> {
+    blocking(crate::ssh_keys::list).await
+}
+
+#[tauri::command]
+pub async fn ssh_keys_generate(input: crate::ssh_keys::SshKeyGenerate) -> AppResult<crate::ssh_keys::SshKeyInfo> {
+    blocking(move || crate::ssh_keys::generate(input)).await
+}
+
+#[tauri::command]
+pub async fn ssh_keys_read_public(path: String) -> AppResult<crate::ssh_keys::SshKeyInfo> {
+    blocking(move || crate::ssh_keys::read_public(Path::new(&path))).await
+}
+
+#[tauri::command]
+pub async fn credential_list(state: State<'_, AppState>) -> AppResult<Vec<crate::credentials::CredentialProfile>> {
+    let db = state.db.clone();
+    blocking(move || crate::credentials::list(&db)).await
+}
+
+#[tauri::command]
+pub async fn credential_upsert(state: State<'_, AppState>, input: crate::credentials::CredentialInput) -> AppResult<crate::credentials::CredentialProfile> {
+    let db = state.db.clone();
+    blocking(move || crate::credentials::save(&db, input)).await
+}
+
+#[tauri::command]
+pub async fn credential_remove(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let db = state.db.clone();
+    blocking(move || crate::credentials::delete(&db, &id)).await
+}
+
+#[tauri::command]
+pub fn auth_pending(state: State<'_, AppState>) -> Vec<crate::auth::AuthChallenge> { state.auth.pending() }
+
+#[tauri::command]
+pub async fn auth_respond(state: State<'_, AppState>, id: String, credential_id: Option<String>, username: String,
+    secret: String, remember: bool, name: Option<String>) -> AppResult<()> {
+    let auth = state.auth.clone();
+    blocking(move || auth.respond(crate::auth::AuthResponse { id, credential_id, username, secret, remember, name })).await
+}
+
+#[tauri::command]
+pub fn auth_cancel(state: State<'_, AppState>, id: String) { state.auth.cancel(&id); }
+
 // ======================= 后台任务 =======================
 
 #[tauri::command]
@@ -719,17 +806,24 @@ pub fn task_clear(state: State<'_, AppState>) {
     state.tasks.clear_finished()
 }
 
-/// 克隆（R-02）。URL 内嵌的令牌会先剥离并存入钥匙串，完成后自动登记。
+/// 克隆（R-02）。URL 内嵌凭据先剥离，仅在用户选择记住且认证有效后保存。
 #[tauri::command]
 pub fn task_clone(app: AppHandle, state: State<'_, AppState>, req: CloneReq) -> AppResult<String> {
     let mut req = req;
     let stripped = security::strip_url_credentials(req.url.trim());
-    if let (Some(u), Some(p)) = (&stripped.username, &stripped.password) {
-        if let Some(key) = security::host_key(&stripped.url) {
-            security::save_credential(&key, u, p)?;
+    let is_http = req.url.trim().to_ascii_lowercase().starts_with("https:") || req.url.trim().to_ascii_lowercase().starts_with("http:");
+    if is_http && security::host_key(&stripped.url).is_none() {
+        return Err(AppError::new("credential.unsupportedUrl"));
+    }
+    if req.credential.is_none() && req.credential_id.is_none() {
+        if let (Some(username), Some(secret)) = (stripped.username, stripped.password) {
+            req.credential = Some(crate::auth::CredentialAnswer { username, secret, remember: false, name: None });
         }
     }
     req.url = stripped.url;
+    // Resolve keychain entries in the worker, never on the window thread.
+    let initial_answer = req.credential.take();
+    let profile_id = req.credential_id.take();
     let st = state.inner().clone();
     let app2 = app.clone();
     let name = req
@@ -739,9 +833,27 @@ pub fn task_clone(app: AppHandle, state: State<'_, AppState>, req: CloneReq) -> 
         .filter(|n| !n.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| dir_name(&req.dest));
-    let task_params = params(&[("name", name.as_str()), ("url", req.url.as_str())]);
-    Ok(state.tasks.spawn(&app, None, "clone", task_params, move |cancel, progress| {
-        sync::clone(&st.git, &req, cancel, Some(progress))?;
+    let task_params = params(&[("name", name.as_str()), ("url", security::redact(&req.url).as_str())]);
+    Ok(state.tasks.spawn(&app, None, "clone", task_params, move |task_id, cancel, progress| {
+        let context = st.auth.context(Some(task_id.to_string()), true);
+        let cancel = cancel.with_auth(context.clone());
+        if let Err(error) = context.set_initial(&req.url, profile_id.as_deref(), initial_answer) {
+            if matches!(error.code.as_str(), "credential.notFound" | "credential.accessDenied" | "credential.error" | "credential.invalidStoredValue") {
+                context.request_input(&req.url, &cancel, &error.code)?;
+            } else { return Err(error); }
+        }
+        // Only the read-only preflight is retried. The actual clone is executed once.
+        if security::host_key(&req.url).is_some() {
+            for attempt in 0..3 {
+                match st.git.run(std::env::temp_dir().as_path(), &["ls-remote", "--", req.url.as_str()],
+                    &RunOpts { cancel: Some(cancel.clone()), ..Default::default() }) {
+                    Ok(_) => break,
+                    Err(error) if error.code == "git.authFailed" && attempt < 2 => context.request_replacement(&req.url, &cancel)?,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        sync::clone(&st.git, &req, &cancel, Some(progress))?;
         // 用 git 给出的根目录登记，避免符号链接（如 macOS /tmp → /private/tmp）造成路径不一致
         let out = st.git.run(Path::new(&req.dest), &["rev-parse", "--show-toplevel"], &RunOpts::read())?;
         let rec = register(&st, &app2, &normalize_root(&out.text()), req.name.as_deref())?;
@@ -757,13 +869,22 @@ fn repo_task(
     extra: &[(&str, &str)],
     job: impl FnOnce(&Repo, &crate::git::runner::CancelToken, crate::git::runner::ProgressFn) -> AppResult<String> + Send + 'static,
 ) -> AppResult<String> {
+    repo_task_policy(app, state, repo_id, kind, extra, true, job)
+}
+
+fn repo_task_policy(
+    app: &AppHandle, state: &AppState, repo_id: &str, kind: &str, extra: &[(&str, &str)], interactive: bool,
+    job: impl FnOnce(&Repo, &crate::git::runner::CancelToken, crate::git::runner::ProgressFn) -> AppResult<String> + Send + 'static,
+) -> AppResult<String> {
     let rec = state.record(repo_id)?;
     let path = state.repo_path(repo_id)?;
     let mut p = params(extra);
     p.insert("repo".into(), rec.name.clone());
     let st = state.clone();
-    Ok(state.tasks.spawn(app, Some(repo_id.to_string()), kind, p, move |cancel, progress| {
-        job(&Repo::new(&st.git, path), cancel, progress)
+    Ok(state.tasks.spawn(app, Some(repo_id.to_string()), kind, p, move |task_id, cancel, progress| {
+        let context = st.auth.context(Some(task_id.to_string()), interactive);
+        let cancel = cancel.with_auth(context);
+        job(&Repo::new(&st.git, path), &cancel, progress)
     }))
 }
 
@@ -778,11 +899,11 @@ pub fn task_fetch(app: AppHandle, state: State<'_, AppState>, repo_id: String, r
 
 /// 全部仓库 Fetch（S-01），跨仓库并行受全局并发上限约束
 #[tauri::command]
-pub fn task_fetch_all(app: AppHandle, state: State<'_, AppState>) -> AppResult<Vec<String>> {
+pub fn task_fetch_all(app: AppHandle, state: State<'_, AppState>, silent: Option<bool>) -> AppResult<Vec<String>> {
     let mut ids = Vec::new();
     for r in state.db.list_repos()? {
         if Path::new(&r.path).is_dir() {
-            ids.push(repo_task(&app, state.inner(), &r.id, "fetch", &[("remote", "")], |repo, c, p| {
+            ids.push(repo_task_policy(&app, state.inner(), &r.id, "fetch", &[("remote", "")], !silent.unwrap_or(false), |repo, c, p| {
                 sync::fetch(repo, None, c, Some(p))?;
                 Ok(String::new())
             })?);
@@ -833,7 +954,9 @@ pub async fn remote_remove(state: State<'_, AppState>, repo_id: String, name: St
 #[tauri::command]
 pub async fn remote_test(state: State<'_, AppState>, repo_id: String, name: String) -> AppResult<RemoteTestResult> {
     let st = state.inner().clone();
-    blocking(move || st.read(&repo_id, |r| remote::test(r, &name, &crate::git::runner::CancelToken::new()))).await
+    let context = st.auth.context(None, true);
+    let cancel = crate::git::runner::CancelToken::new().with_auth(context);
+    blocking(move || st.read(&repo_id, |r| remote::test(r, &name, &cancel))).await
 }
 
 // ======================= M2：同步规则（M-02 ~ M-05） =======================
@@ -989,6 +1112,7 @@ pub fn task_sync(app: AppHandle, state: State<'_, AppState>, repo_id: String, re
     repo_task(&app, state.inner(), &repo_id, "sync", &[("branches", label.as_str())], move |r, c, p| {
         let branches = branch::list(r)?;
         let report = sync_engine::run(r, &branches, &rules, &req, c, &p)?;
+        if c.is_cancelled() { return Err(AppError::new("task.cancelled")); }
         let failed = report
             .results
             .iter()
@@ -1413,7 +1537,7 @@ pub async fn remote_check_all(state: State<'_, AppState>, repo_id: String) -> Ap
     let st = state.inner().clone();
     blocking(move || {
         st.read(&repo_id, |r| {
-            let token = crate::git::runner::CancelToken::new();
+            let token = crate::git::runner::CancelToken::new().with_auth(st.auth.context(None, false));
             let names = r.remotes()?;
             // 并行检测，每个 remote 一个线程
             let handles: Vec<_> = names

@@ -29,7 +29,7 @@ export function CodeEditor({ id, path, text, readOnly, onChange, onSave }: {
           if (update.docChanged) callbacks.current.onChange(update.state.doc.toString());
         }),
         EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--mono)', fontSize: 'var(--code-size, 12px)' },
-          '.cm-content': { caretColor: 'var(--fg)' }, '.cm-gutters': { background: 'var(--bg-2)', color: 'var(--fg-muted)', borderColor: 'var(--border)' },
+          '.cm-content': { caretColor: 'var(--fg)' }, '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--fg)', borderLeftWidth: '2px' }, '.cm-gutters': { background: 'var(--bg-2)', color: 'var(--fg-muted)', borderColor: 'var(--border)' },
           '.cm-activeLine, .cm-activeLineGutter': { background: 'var(--bg-2)' }, '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { background: 'var(--selected)' } }),
       ];
     // Preserve selection and undo history across tab/repository switches.

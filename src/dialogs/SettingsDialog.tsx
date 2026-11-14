@@ -10,8 +10,10 @@ import { Field, Modal } from '../components/ui';
 import { Icon } from '../components/Icon';
 import { LANGUAGES, setLanguage } from '../i18n';
 import { errorMessage } from '../lib/errors';
+import { CredentialSection } from './CredentialSection';
+import { SshKeysSection } from './SshKeysSection';
 
-type Section = 'general' | 'language' | 'git' | 'identity' | 'credentials' | 'appearance' | 'external' | 'precheck' | 'shortcuts';
+type Section = 'general' | 'language' | 'git' | 'identity' | 'credentials' | 'sshKeys' | 'appearance' | 'external' | 'precheck' | 'shortcuts';
 
 function useSetting() {
   const settings = useApp((s) => s.settings);
@@ -152,69 +154,6 @@ function IdentitySection() {
   );
 }
 
-function CredentialSection() {
-  const { t } = useTranslation();
-  const toast = useApp((s) => s.toast);
-  const [url, setUrl] = useState('');
-  const [user, setUser] = useState('');
-  const [secret, setSecret] = useState('');
-  const [existing, setExisting] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!/^https?:\/\/[^/]+/i.test(url.trim())) {
-      setExisting(null);
-      return;
-    }
-    const h = setTimeout(() => api.credential.getUser(url.trim()).then(setExisting, () => setExisting(null)), 300);
-    return () => clearTimeout(h);
-  }, [url]);
-
-  return (
-    <>
-      <p className="muted">{t('settings.credNote')}</p>
-      <Field label={t('settings.credUrl')}>
-        <input value={url} onChange={(e) => setUrl(e.target.value)} className="mono" />
-      </Field>
-      {existing && <p className="muted">{t('settings.credExisting', { user: existing })}</p>}
-      <div className="field-row">
-        <Field label={t('settings.credUser')}>
-          <input value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" />
-        </Field>
-        <Field label={t('settings.credToken')}>
-          <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-        </Field>
-      </div>
-      <div className="action-row">
-        <button
-          className="primary"
-          disabled={!url.trim() || !user.trim() || !secret}
-          onClick={() =>
-            api.credential.save(url.trim(), user.trim(), secret).then(() => {
-              setSecret('');
-              setExisting(user.trim());
-              toast('success', t('settings.credSaved'));
-            }, reportError)
-          }
-        >
-          {t('settings.credSave')}
-        </button>
-        <button
-          className="danger"
-          disabled={!existing}
-          onClick={() =>
-            api.credential.delete(url.trim()).then(() => {
-              setExisting(null);
-              toast('success', t('settings.credDeleted'));
-            }, reportError)
-          }
-        >
-          {t('settings.credDelete')}
-        </button>
-      </div>
-    </>
-  );
-}
-
 /** 外观（T-04）：主题、字体、字号、差异颜色 */
 export const DIFF_COLOR_KEYS = ['add', 'rem', 'chg'] as const;
 
@@ -349,7 +288,7 @@ export function SettingsDialog() {
   const { t } = useTranslation();
   const close = useApp((s) => s.closeDialog);
   const [section, setSection] = useState<Section>('general');
-  const sections: Section[] = ['general', 'language', 'git', 'identity', 'credentials', 'appearance', 'external', 'precheck', 'shortcuts'];
+  const sections: Section[] = ['general', 'language', 'git', 'identity', 'credentials', 'sshKeys', 'appearance', 'external', 'precheck', 'shortcuts'];
   return (
     <Modal title={t('settings.title')} onClose={close} width={760}>
       <div className="settings">
@@ -366,6 +305,7 @@ export function SettingsDialog() {
           {section === 'git' && <GitSection />}
           {section === 'identity' && <IdentitySection />}
           {section === 'credentials' && <CredentialSection />}
+          {section === 'sshKeys' && <SshKeysSection />}
           {section === 'appearance' && <AppearanceSection />}
           {section === 'external' && <ExternalSection />}
           {section === 'precheck' && <PrecheckSection />}

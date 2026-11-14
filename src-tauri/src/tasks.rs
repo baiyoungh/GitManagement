@@ -57,12 +57,14 @@ impl Semaphore {
     fn new(n: usize) -> Self {
         Self { count: Mutex::new(n), cv: Condvar::new() }
     }
-    fn acquire(&self) {
+    fn acquire(&self, cancel: &CancelToken) -> bool {
         let mut c = self.count.lock().unwrap_or_else(|e| e.into_inner());
-        while *c == 0 {
-            c = self.cv.wait(c).unwrap_or_else(|e| e.into_inner());
+        while *c == 0 && !cancel.is_cancelled() {
+            c = self.cv.wait_timeout(c, std::time::Duration::from_millis(100)).unwrap_or_else(|e| e.into_inner()).0;
         }
+        if cancel.is_cancelled() { return false; }
         *c -= 1;
+        true
     }
     fn release(&self) {
         *self.count.lock().unwrap_or_else(|e| e.into_inner()) += 1;
@@ -172,7 +174,7 @@ impl TaskManager {
         job: F,
     ) -> String
     where
-        F: FnOnce(&CancelToken, ProgressFn) -> AppResult<String> + Send + 'static,
+        F: FnOnce(&str, &CancelToken, ProgressFn) -> AppResult<String> + Send + 'static,
     {
         let id = uuid::Uuid::new_v4().to_string();
         let token = CancelToken::new();
@@ -199,9 +201,19 @@ impl TaskManager {
         let app = app.clone();
         let task_id = id.clone();
         std::thread::spawn(move || {
-            mgr.slots.acquire();
+            if !mgr.slots.acquire(&token) {
+                mgr.update(&app, &task_id, |t| t.state = TaskState::Cancelled);
+                return;
+            }
             let lock = repo_id.as_deref().map(|r| mgr.repo_lock(r));
-            let _guard = lock.as_ref().map(|l| l.lock().unwrap_or_else(|e| e.into_inner()));
+            let _guard = lock.as_ref().and_then(|l| loop {
+                if token.is_cancelled() { break None; }
+                match l.try_lock() {
+                    Ok(guard) => break Some(guard),
+                    Err(std::sync::TryLockError::Poisoned(error)) => break Some(error.into_inner()),
+                    Err(std::sync::TryLockError::WouldBlock) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                }
+            });
 
             let result = if token.is_cancelled() {
                 Err(AppError::new("task.cancelled"))
@@ -215,7 +227,7 @@ impl TaskManager {
                         ProgressEvent { task_id: tid.clone(), percent, message: line.to_string() },
                     );
                 });
-                job(&token, progress)
+                job(&task_id, &token, progress)
             };
             drop(_guard);
             mgr.slots.release();

@@ -8,6 +8,7 @@ import { api } from '../api';
 import type { DiffOpts, FileChange, FileDiff, Hunk, Rev } from '../api/types';
 import { invalidateRepo, reportError } from '../api/queries';
 import { useApp } from '../stores/appStore';
+import { useAuth } from '../stores/authStore';
 import { buildSideBySide, buildUnified, inlineRange, revertHunk, type Row, type UnifiedRow } from '../lib/diffModel';
 import { highlightLines, type Token } from '../lib/highlight';
 import { Icon } from '../components/Icon';
@@ -181,6 +182,7 @@ export function DiffViewer({ target: rawTarget }: { target: DiffTarget | null })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (Object.keys(useAuth.getState().challenges).length) return;
       if ((e.target as HTMLElement | null)?.closest('.terminal-host')) return;
       if (e.key === 'F7') {
         e.preventDefault();

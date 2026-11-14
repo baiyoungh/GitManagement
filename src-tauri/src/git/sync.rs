@@ -11,12 +11,13 @@ use std::path::Path;
 fn long_opts(cancel: &CancelToken, progress: Option<ProgressFn>) -> RunOpts {
     RunOpts {
         cancel: Some(cancel.clone()),
+        redact_stdout: true,
         progress,
         ..Default::default()
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloneReq {
     pub url: String,
@@ -26,6 +27,8 @@ pub struct CloneReq {
     pub depth: Option<u32>,
     /// 可选的显示名称；留空时使用目标目录名
     pub name: Option<String>,
+    pub credential_id: Option<String>,
+    pub credential: Option<crate::auth::CredentialAnswer>,
 }
 
 pub fn clone(git: &GitRunner, req: &CloneReq, cancel: &CancelToken, progress: Option<ProgressFn>) -> AppResult<()> {

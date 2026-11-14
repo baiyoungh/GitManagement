@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
-import type { CommandLogEntry, TaskInfo, TaskProgress } from '../api/types';
+import type { AuthChallenge, CommandLogEntry, TaskInfo, TaskProgress } from '../api/types';
+import { useAuth } from '../stores/authStore';
 import { invalidateRepo, keys, queryClient } from '../api/queries';
 import { useApp } from '../stores/appStore';
 import { useTasks } from '../stores/taskStore';
@@ -50,7 +51,10 @@ export function useBackendEvents() {
           const { toast } = useApp.getState();
           if (task.state === 'failed') toast('error', `${t('tasks.failed', { task: title })}：${errorMessage(task.error)}`, errorDetail(task.error));
           else if (task.state === 'succeeded') toast('success', t('tasks.succeeded', { task: title }));
-          if (task.kind === 'clone') void queryClient.invalidateQueries({ queryKey: keys.repos });
+          if (task.kind === 'clone') {
+            void queryClient.invalidateQueries({ queryKey: keys.repos });
+            if (task.state !== 'failed' || task.error?.code !== 'git.authFailed') useAuth.getState().forgetClone(task.id);
+          }
           if (task.repoId) invalidateRepo(task.repoId);
         }
       }),
@@ -58,6 +62,27 @@ export function useBackendEvents() {
 
     add(listen<TaskProgress>('task-progress', (e) => useTasks.getState().progress(e.payload)));
     add(listen<CommandLogEntry>('command-log', (e) => useTasks.getState().addLog(e.payload)));
+
+    // Register both listeners before requesting a snapshot; resolved-ID tombstones
+    // protect against auth-resolved arriving while auth_pending is in flight.
+    const authListeners = [
+      add(listen<AuthChallenge>('auth-challenge', (e) => {
+        if (disposed) return;
+        useAuth.getState().upsert(e.payload);
+        useApp.getState().setBottom(true, 'tasks');
+      })),
+      add(listen<{ id: string }>('auth-resolved', (e) => {
+        if (!disposed) useAuth.getState().resolve(e.payload.id);
+      })),
+      add(listen<{ code: string }>('auth-warning', () => {
+        if (!disposed) useApp.getState().toast('error', t('auth.saveFailed'));
+      })),
+    ];
+    void Promise.all(authListeners).then(() => {
+      if (!disposed) return api.auth.pending().then((items) => {
+        if (!disposed) useAuth.getState().mergePending(items);
+      });
+    }).catch(() => undefined);
 
     // 首次加载已有的任务与日志
     void api.task.list().then((ts) => useTasks.getState().setAll(ts));

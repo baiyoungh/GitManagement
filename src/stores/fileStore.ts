@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { FileDocument } from '../api';
+import { containsPath } from '../lib/filePaths';
 
 export interface Buffer {
   repoId: string;
@@ -21,6 +22,8 @@ interface FilesState {
   saving: (key: string, saving: boolean) => void;
   saved: (key: string, source: FileDocument) => void;
   close: (key: string) => void;
+  renamePath: (repoId: string, path: string, newPath: string) => void;
+  removePath: (repoId: string, path: string) => void;
 }
 
 export const useFiles = create<FilesState>((set) => ({
@@ -35,6 +38,26 @@ export const useFiles = create<FilesState>((set) => ({
   edit: (key, text) => set((s) => s.buffers[key] ? ({ buffers: { ...s.buffers, [key]: { ...s.buffers[key], text } } }) : s),
   saving: (key, saving) => set((s) => s.buffers[key] ? ({ buffers: { ...s.buffers, [key]: { ...s.buffers[key], saving } } }) : s),
   saved: (key, source) => set((s) => s.buffers[key] ? ({ buffers: { ...s.buffers, [key]: { ...s.buffers[key], source, saving: false } } }) : s),
+  renamePath: (repoId, path, newPath) => set((s) => {
+    const buffers: Record<string, Buffer> = {};
+    for (const [key, buffer] of Object.entries(s.buffers)) {
+      if (buffer.repoId === repoId && containsPath(path, buffer.path)) {
+        const renamed = newPath + buffer.path.slice(path.length);
+        buffers[fileKey(repoId, renamed)] = { ...buffer, path: renamed };
+      } else buffers[key] = buffer;
+    }
+    const selected = { ...s.selected };
+    if (selected[repoId] && containsPath(path, selected[repoId])) selected[repoId] = newPath + selected[repoId].slice(path.length);
+    return { buffers, selected };
+  }),
+  removePath: (repoId, path) => set((s) => {
+    const buffers = Object.fromEntries(Object.entries(s.buffers).filter(([, b]) => b.repoId !== repoId || !containsPath(path, b.path)));
+    const selected = { ...s.selected };
+    if (selected[repoId] && containsPath(path, selected[repoId])) {
+      selected[repoId] = Object.values(buffers).filter((b) => b.repoId === repoId).at(-1)?.path ?? '';
+    }
+    return { buffers, selected };
+  }),
   close: (key) => set((s) => {
     const buffers = { ...s.buffers };
     const buffer = buffers[key];

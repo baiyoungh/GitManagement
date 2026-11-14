@@ -1,5 +1,5 @@
 // 左侧仓库栏（specs/06 第 1 节）：收藏置顶、自定义分组（R-04，可拖拽排序）、多选批量操作（R-06）
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import type { RepoGroup, RepoView } from '../api/types';
@@ -128,6 +128,7 @@ export function Sidebar() {
   const prompt = useApp((s) => s.prompt);
   const menu = useContextMenu();
   const [dragGroup, setDragGroup] = useState<string | null>(null);
+  const removing = useRef(false);
 
   const all = repos.data ?? [];
   const parents = useMemo(() => new Map(all.map((repo) => [repo.id, parentRepo(repo.path, all)])), [all]);
@@ -163,6 +164,51 @@ export function Sidebar() {
     }
   };
   const multiRepos = all.filter((r) => multi.includes(r.id));
+  const removeLabel = (count: number) => t('batch.remove', { count, defaultValue: 'Remove {{count}} repositories from list…' });
+  const removeRepos = async (targets: RepoView[], group?: RepoGroup) => {
+    if (!targets.length || removing.current) return;
+    removing.current = true;
+    try {
+      const count = targets.length;
+      const ok = await ask({
+        title: group
+          ? t('groups.removeReposTitle', { name: group.name, count, defaultValue: 'Remove {{count}} repositories from group “{{name}}”' })
+          : count === 1 ? t('sidebar.removeTitle') : t('batch.removeTitle', { count, defaultValue: 'Remove {{count}} repositories' }),
+        body: group
+          ? t('groups.removeReposBody', {
+            name: group.name, count,
+            defaultValue: 'Remove all {{count}} registered repositories in group “{{name}}” from GitManagement, including favorites and repositories hidden by search? Files on disk will remain unchanged. The group itself will be retained.',
+          })
+          : count === 1 ? t('sidebar.removeBody', { name: targets[0].name }) : t('batch.removeBody', {
+            count, defaultValue: 'Remove {{count}} selected repositories from GitManagement only? Files on disk and groups will remain unchanged.',
+          }),
+        danger: true,
+        items: targets.map((repo) => `${repo.name} — ${repo.path}`),
+      });
+      if (!ok) return;
+      // Each record is independent: one failure must not stop the remaining removals.
+      try {
+        const results = await Promise.allSettled(targets.map(async (repo) => api.repo.remove(repo.id)));
+        const removed = new Set<string>();
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') removed.add(targets[index].id);
+          else reportError(result.reason);
+        });
+        // Read current selections after the async work, and do not use selectRepo:
+        // it would also discard failed/unrelated multi-selections.
+        useApp.setState((state) => ({
+          selectedRepoId: state.selectedRepoId && removed.has(state.selectedRepoId) ? null : state.selectedRepoId,
+          multiSelected: state.multiSelected.filter((id) => !removed.has(id)),
+        }));
+      } finally {
+        await refreshRepos();
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      removing.current = false;
+    }
+  };
 
   // ---------- 点击：普通选中 / ⌘(Ctrl) 多选 / ⇧ 连续选 ----------
   const flatOrder = sections.flatMap((s) => (s.group?.collapsed ? [] : s.repos));
@@ -273,6 +319,7 @@ export function Sidebar() {
         { separator: true },
         ...moveItems(multi),
         { separator: true },
+        { label: removeLabel(multiRepos.length), danger: true, disabled: !multiRepos.length, onClick: () => removeRepos(multiRepos) },
         { label: t('batch.clearSelection'), onClick: () => setMulti([]) },
       ]);
       return;
@@ -314,23 +361,15 @@ export function Sidebar() {
       {
         label: t('sidebar.ctxRemove'),
         danger: true,
-        onClick: async () => {
-          const ok = await ask({ title: t('sidebar.removeTitle'), body: t('sidebar.removeBody', { name: repo.name }) });
-          if (!ok) return;
-          try {
-            await api.repo.remove(repo.id);
-            if (selectedRepoId === repo.id) selectRepo(null);
-            await refreshRepos();
-          } catch (err) {
-            reportError(err);
-          }
-        },
+        onClick: () => removeRepos([repo]),
       },
     ];
     menu.open(e, items);
   };
 
-  const groupMenu = (g: RepoGroup, members: RepoView[]) => (e: React.MouseEvent) =>
+  const groupMenu = (g: RepoGroup, members: RepoView[]) => (e: React.MouseEvent) => {
+    // Removal scope is the registered group, never the rendered/search-filtered section.
+    const registered = all.filter((repo) => repo.groupId === g.id);
     menu.open(e, [
       { label: t('groups.showOverview'), onClick: () => showOverview(g.id) },
       { label: t('batch.fetch', { count: members.length }), disabled: !members.length, onClick: () => runBatch('fetch', members) },
@@ -346,6 +385,12 @@ export function Sidebar() {
       },
       { label: t('groups.new'), onClick: () => newGroup() },
       {
+        label: t('groups.removeRepos', { count: registered.length, defaultValue: 'Remove all {{count}} repositories from list…' }),
+        danger: true,
+        disabled: !registered.length,
+        onClick: () => removeRepos(registered, g),
+      },
+      {
         label: t('groups.delete'),
         danger: true,
         onClick: async () => {
@@ -357,6 +402,7 @@ export function Sidebar() {
         },
       },
     ]);
+  };
 
   const toggleCollapse = (g: RepoGroup) => api.group.setCollapsed(g.id, !g.collapsed).then(refreshGroups, reportError);
 
@@ -379,6 +425,9 @@ export function Sidebar() {
           </button>
           <button className="small" onClick={() => runBatch('sync', multiRepos)} title={t('top.sync')} aria-label={t('top.sync')}>
             <Icon name="sync" size={14} />
+          </button>
+          <button className="small danger" disabled={!multiRepos.length} onClick={() => void removeRepos(multiRepos)} title={removeLabel(multiRepos.length)} aria-label={removeLabel(multiRepos.length)}>
+            {t('sidebar.ctxRemove')}
           </button>
           <button className="icon-btn" onClick={() => setMulti([])} aria-label={t('batch.clearSelection')} title={t('batch.clearSelection')}>
             <Icon name="close" />
