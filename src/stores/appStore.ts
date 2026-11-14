@@ -1,10 +1,11 @@
 import { create } from 'zustand';
+import type { CloneRetry } from '../lib/credentials';
 
 export type Tab = 'changes' | 'files' | 'log' | 'branches' | 'mapping' | 'stash';
 
 export type DialogState =
   | { type: 'addRepo' }
-  | { type: 'clone' }
+  | { type: 'clone'; initial?: CloneRetry }
   | { type: 'settings' }
   | { type: 'push'; repoId: string; branch?: string }
   | { type: 'createBranch'; repoId: string; startPoint?: string }

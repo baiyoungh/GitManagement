@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import { useApp } from '../stores/appStore';
 import { useTasks } from '../stores/taskStore';
+import { useAuth } from '../stores/authStore';
 import { taskTitle } from '../lib/tasks';
 import { errorMessage } from '../lib/errors';
 import { Icon } from './Icon';
@@ -15,6 +16,9 @@ export function BottomPanel() {
   const tab = useApp((s) => s.bottomTab);
   const setBottom = useApp((s) => s.setBottom);
   const tasks = useTasks((s) => s.tasks);
+  const challenges = useAuth((s) => s.challenges);
+  const cloneRetries = useAuth((s) => s.cloneRetries);
+  const waiting = Object.values(challenges);
   const logs = useTasks((s) => s.logs);
   const list = Object.values(tasks).sort((a, b) => b.startedAt - a.startedAt);
   const running = list.filter((x) => x.state === 'running' || x.state === 'queued');
@@ -38,6 +42,7 @@ export function BottomPanel() {
         <button className={tab === 'terminal' && open ? 'active' : ''} onClick={() => setBottom(!(open && tab === 'terminal'), 'terminal')}>
           {t('terminal.title')}
         </button>
+        {waiting.length > 0 && <button className="warn-text" onClick={() => useAuth.getState().open(waiting[0].id)}>{t('auth.waitingCount', { count: waiting.length })}</button>}
         <span className="bottom-summary inline-icon">{summary && <Icon name="refresh" size={13} className="spin" />}{summary}</span>
         <button className="icon-btn" onClick={() => setBottom(!open)} aria-label={open ? t('common.collapse') : t('common.expand')} title={open ? t('common.collapse') : t('common.expand')}>
           <Icon name={open ? 'chevronDown' : 'chevronUp'} size={18} />
@@ -50,6 +55,10 @@ export function BottomPanel() {
             <button
               onClick={() => {
                 void api.task.clear();
+                Object.keys(useAuth.getState().cloneRetries).forEach((id) => {
+                  const task = useTasks.getState().tasks[id];
+                  if (!task || !['running', 'queued'].includes(task.state)) useAuth.getState().forgetClone(id);
+                });
                 useTasks.getState().clearFinished();
               }}
             >
@@ -60,7 +69,10 @@ export function BottomPanel() {
           <ul className="task-list">
             {list.map((task) => (
               <li key={task.id} className={`task task-${task.state}`}>
-                <span className="task-state">{t(`tasks.state.${task.state}`)}</span>
+                <span className="task-state">{waiting.some((challenge) => challenge.taskId === task.id) ? t('auth.waiting') : t(`tasks.state.${task.state}`)}</span>
+                {waiting.filter((challenge) => challenge.taskId === task.id).map((challenge) => <button key={challenge.id} onClick={() => useAuth.getState().open(challenge.id)}>{t('auth.open')}</button>)}
+                {task.kind === 'clone' && task.state === 'failed' && task.error?.code === 'git.authFailed' && <button onClick={() => useApp.getState().openDialog({ type: 'clone', initial: cloneRetries[task.id] })}>{t('auth.retryClone')}</button>}
+                {task.state === 'failed' && task.error?.code === 'git.authFailed' && <button onClick={() => useApp.getState().openDialog({ type: 'settings' })}>{t('settings.credentials')}</button>}
                 <span className="task-title">{taskTitle(task)}</span>
                 {task.state === 'running' && (
                   <progress max={100} value={task.percent ?? undefined} aria-label={taskTitle(task)} />

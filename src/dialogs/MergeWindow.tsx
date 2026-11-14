@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import { invalidateRepo, reportError } from '../api/queries';
 import { useApp } from '../stores/appStore';
+import { useAuth } from '../stores/authStore';
 import { errorMessage } from '../lib/errors';
 import { Icon } from '../components/Icon';
 import {
@@ -161,6 +162,7 @@ export function MergeWindow({ repoId, path, oursLabel, theirsLabel, onClose }: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (Object.keys(useAuth.getState().challenges).length) return;
       if (e.key === 'F7') {
         e.preventDefault();
         nav(e.shiftKey ? -1 : 1);

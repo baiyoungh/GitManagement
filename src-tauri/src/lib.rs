@@ -1,10 +1,14 @@
 pub mod askpass;
+pub mod auth;
+pub mod credentials;
 pub mod commands;
 pub mod diff3;
 pub mod error;
 pub mod files;
 pub mod git;
 pub mod security;
+pub mod ssh;
+pub mod ssh_keys;
 pub mod storage;
 pub mod sync_engine;
 pub mod system;
@@ -62,8 +66,13 @@ pub fn run() {
                 .flatten()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(4);
+            let auth_handle = app.handle().clone();
+            let auth = auth::AuthBroker::new(db.clone(), Arc::new(move |event, payload| {
+                let _ = auth_handle.emit_to("main", event, payload);
+            }));
             let state = AppState {
                 db: db.clone(),
+                auth,
                 git,
                 tasks: Arc::new(tasks::TaskManager::new(parallel)),
                 watcher: Arc::new(watcher::WatchManager::new()),
@@ -137,6 +146,16 @@ pub fn run() {
             commands::push_preview,
             commands::identity_get,
             commands::identity_set,
+            commands::ssh_keys_directory,
+            commands::ssh_keys_list,
+            commands::ssh_keys_generate,
+            commands::ssh_keys_read_public,
+            commands::credential_list,
+            commands::credential_upsert,
+            commands::credential_remove,
+            commands::auth_pending,
+            commands::auth_respond,
+            commands::auth_cancel,
             commands::credential_save,
             commands::credential_delete,
             commands::credential_get_user,
@@ -223,6 +242,7 @@ pub fn run() {
                 }
             }
             if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<AppState>().auth.cancel_all();
                 app.state::<AppState>().terminals.close_all();
             }
         });

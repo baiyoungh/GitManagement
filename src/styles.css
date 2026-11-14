@@ -2283,3 +2283,10 @@ html[data-resizing='column'] * { cursor: row-resize !important; }
   padding: 6px 8px 2px;
   text-transform: uppercase;
 }
+
+/* Credential management follows the existing dense desktop form layout. */
+.credential-list { list-style: none; padding: 0; margin: 12px 0; }
+.credential-list li { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.credential-summary { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.credential-fields { margin: 12px 0; }
+.auth-url { overflow-wrap: anywhere; }

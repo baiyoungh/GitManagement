@@ -32,6 +32,8 @@ import { FileHistoryDialog } from './dialogs/FileHistoryDialog';
 import { BranchPopup, RepoSwitcher } from './dialogs/QuickPickers';
 import { PromptHost } from './components/ui';
 import { isMac } from './lib/format';
+import { useAuth } from './stores/authStore';
+import { AuthHost } from './dialogs/AuthDialog';
 import { openPush, startPull } from './lib/actions';
 
 const TABS: Tab[] = ['changes', 'files', 'log', 'branches', 'mapping', 'stash'];
@@ -43,7 +45,7 @@ function Dialogs() {
     case 'addRepo':
       return <AddRepoDialog />;
     case 'clone':
-      return <CloneDialog />;
+      return <CloneDialog initial={d.initial} />;
     case 'settings':
       return <SettingsDialog />;
     case 'push':
@@ -118,7 +120,7 @@ function useAppearance(settings: Record<string, string>) {
 function useAutoFetch(minutes: number) {
   useEffect(() => {
     if (!minutes || minutes <= 0) return;
-    const h = window.setInterval(() => void api.task.fetchAll().catch(() => undefined), minutes * 60_000);
+    const h = window.setInterval(() => void api.task.fetchAll(true).catch(() => undefined), minutes * 60_000);
     return () => window.clearInterval(h);
   }, [minutes]);
 }
@@ -170,7 +172,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.closest('.cm-editor, .terminal-host')) return;
       const mod = isMac ? e.metaKey : e.ctrlKey;
-      if (!mod || useApp.getState().dialog || useApp.getState().confirm || useApp.getState().promptReq) return;
+      if (!mod || Object.keys(useAuth.getState().challenges).length || useApp.getState().dialog || useApp.getState().confirm || useApp.getState().promptReq) return;
       const k = e.key.toLowerCase();
       // ⌘⇧` 分支弹窗（e.code 不受键盘布局影响）
       if (e.shiftKey && (e.code === 'Backquote' || k === '`' || k === '~') && repoId) {
@@ -250,6 +252,7 @@ export function App() {
       <SyncDialogHost />
       <ConfirmHost />
       <PromptHost />
+      <AuthHost />
       <Toasts />
     </div>
   );

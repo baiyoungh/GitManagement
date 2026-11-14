@@ -145,23 +145,38 @@ pub struct DeleteBranchReq {
 }
 
 pub fn delete(repo: &Repo, req: &DeleteBranchReq) -> AppResult<()> {
+    delete_with_opts(repo, req, &RunOpts::default())
+}
+
+pub fn delete_with_opts(repo: &Repo, req: &DeleteBranchReq, opts: &RunOpts) -> AppResult<()> {
     check_arg("branch", &req.name)?;
     let flag = if req.force { "-D" } else { "-d" };
+    // Authenticate/validate the remote deletion before touching the local branch.
+    if let Some(r) = &req.remote {
+        check_arg("remote", &r.remote)?;
+        check_arg("branch", &r.branch)?;
+        let spec = format!(":refs/heads/{}", r.branch);
+        repo.run_with(&["push", "--dry-run", r.remote.as_str(), spec.as_str()], opts)?;
+    }
     repo.write(&["branch", flag, req.name.as_str()])?;
     if let Some(r) = &req.remote {
         check_arg("remote", &r.remote)?;
         check_arg("branch", &r.branch)?;
         let spec = format!(":refs/heads/{}", r.branch);
-        repo.run_with(&["push", r.remote.as_str(), spec.as_str()], &RunOpts::default())?;
+        repo.run_with(&["push", r.remote.as_str(), spec.as_str()], opts)?;
     }
     Ok(())
 }
 
 pub fn delete_remote_branch(repo: &Repo, remote: &str, branch: &str) -> AppResult<()> {
+    delete_remote_branch_with_opts(repo, remote, branch, &RunOpts::default())
+}
+
+pub fn delete_remote_branch_with_opts(repo: &Repo, remote: &str, branch: &str, opts: &RunOpts) -> AppResult<()> {
     check_arg("remote", remote)?;
     check_arg("branch", branch)?;
     let spec = format!(":refs/heads/{}", branch);
-    repo.run_with(&["push", remote, spec.as_str()], &RunOpts::default())?;
+    repo.run_with(&["push", remote, spec.as_str()], opts)?;
     Ok(())
 }
 

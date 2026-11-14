@@ -109,7 +109,21 @@ export const api = {
     set: (repoId: string | null, scope: T.ConfigScope, identity: T.Identity) =>
       call<void>('identity_set', { repoId, scope, identity }),
   },
+  sshKeys: {
+    directory: () => call<string>('ssh_keys_directory'),
+    list: () => call<T.SshKeyInfo[]>('ssh_keys_list'),
+    generate: (input: T.SshKeyGenerate) => call<T.SshKeyInfo>('ssh_keys_generate', { input }),
+    readPublic: (path: string) => call<T.SshKeyInfo>('ssh_keys_read_public', { path }),
+  },
+  auth: {
+    pending: () => call<T.AuthChallenge[]>('auth_pending'),
+    respond: (response: T.AuthResponse) => call<void>('auth_respond', { ...response }),
+    cancel: (id: string) => call<void>('auth_cancel', { id }),
+  },
   credential: {
+    list: () => call<T.CredentialProfile[]>('credential_list'),
+    upsert: (input: T.CredentialInput) => call<T.CredentialProfile>('credential_upsert', { input }),
+    remove: (id: string) => call<void>('credential_remove', { id }),
     save: (url: string, username: string, secret: string) =>
       call<void>('credential_save', { url, username, secret }),
     delete: (url: string) => call<void>('credential_delete', { url }),
@@ -121,7 +135,7 @@ export const api = {
     clear: () => call<void>('task_clear'),
     clone: (req: T.CloneReq) => call<string>('task_clone', { req }),
     fetch: (repoId: string, remote?: string | null) => call<string>('task_fetch', { repoId, remote: remote ?? null }),
-    fetchAll: () => call<string[]>('task_fetch_all'),
+    fetchAll: (silent = false) => call<string[]>('task_fetch_all', { silent }),
     pull: (repoId: string, strategy?: T.PullStrategy) => call<string>('task_pull', { repoId, strategy: strategy ?? null }),
     push: (repoId: string, req: T.PushReq) => call<string>('task_push', { repoId, req }),
     sync: (repoId: string, req: T.SyncRunReq) => call<string>('task_sync', { repoId, req }),

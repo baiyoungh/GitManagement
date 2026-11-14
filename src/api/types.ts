@@ -269,7 +269,69 @@ export interface PushReq {
   setUpstream: boolean;
 }
 
+export interface SshKeyInfo {
+  name: string;
+  publicPath: string;
+  privatePath: string | null;
+  publicKey: string;
+  fingerprint: string;
+  keyType: string;
+  comment: string;
+}
+
+export interface SshKeyGenerate {
+  name: string;
+  comment: string;
+  passphrase: string;
+}
+
+export interface CredentialProfile {
+  id: string;
+  name: string;
+  url: string;
+  username: string;
+}
+
+export interface CredentialInput {
+  id?: string | null;
+  name: string;
+  url: string;
+  username: string;
+  secret?: string | null;
+}
+
+export interface AuthChallenge {
+  id: string;
+  taskId: string | null;
+  url: string;
+  kind: 'https' | 'sshPassword' | 'sshPassphrase' | 'sshHostKey';
+  ssh?: {
+    host: string | null;
+    port: number | null;
+    username: string | null;
+    keyPath: string | null;
+    fingerprint: string | null;
+    keyType: string | null;
+    destination: string | null;
+  };
+  username: string | null;
+  profiles: CredentialProfile[];
+  error: string | null;
+  expiresAt: number;
+}
+
+export interface AuthResponse {
+  id: string;
+  credentialId?: string | null;
+  username: string;
+  secret: string;
+  remember: boolean;
+  name?: string | null;
+}
+
 export interface CloneReq {
+  credentialId?: string | null;
+  credential?: { username: string; secret: string; remember: boolean; name?: string } | null;
   url: string;
   dest: string;
   branch?: string | null;

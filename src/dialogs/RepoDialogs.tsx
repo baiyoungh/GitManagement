@@ -1,9 +1,12 @@
 // 添加本地仓库（R-01）、克隆（R-02）
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
-import type { PathCheck } from '../api/types';
+import type { CloneReq, CredentialProfile, PathCheck } from '../api/types';
+import { CredentialFields, useCredentialForm } from '../components/CredentialFields';
+import { cloneRetry, isHttpCredentialUrl, type CloneRetry } from '../lib/credentials';
+import { useAuth } from '../stores/authStore';
 import { keys, queryClient, reportError } from '../api/queries';
 import { useApp } from '../stores/appStore';
 import { Field, Modal } from '../components/ui';
@@ -91,18 +94,32 @@ function nameFromUrl(url: string): string {
   return m ? m[1] : '';
 }
 
-export function CloneDialog() {
+export function CloneDialog({ initial }: { initial?: CloneRetry }) {
   const { t } = useTranslation();
   const close = useApp((s) => s.closeDialog);
   const toast = useApp((s) => s.toast);
   const settings = useApp((s) => s.settings);
-  const [url, setUrl] = useState('');
-  const [parent, setParent] = useState(settings.cloneParent ?? '');
-  const [dirName, setDirName] = useState('');
-  const [dirTouched, setDirTouched] = useState(false);
-  const [name, setName] = useState('');
-  const [branch, setBranch] = useState('');
-  const [depth, setDepth] = useState('');
+  const initialParts = initial?.dest.match(/^(.*)[\\/]([^\\/]+)$/);
+  const [url, setUrl] = useState(initial?.url ?? '');
+  const [parent, setParent] = useState(initialParts?.[1] ?? settings.cloneParent ?? '');
+  const [dirName, setDirName] = useState(initialParts?.[2] ?? '');
+  const [dirTouched, setDirTouched] = useState(!!initial);
+  const [name, setName] = useState(initial?.name ?? '');
+  const [branch, setBranch] = useState(initial?.branch ?? '');
+  const [depth, setDepth] = useState(initial?.depth?.toString() ?? '');
+  const [profiles, setProfiles] = useState<CredentialProfile[]>([]);
+  const [profileError, setProfileError] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const auth = useCredentialForm(url);
+  const https = isHttpCredentialUrl(url);
+
+  useEffect(() => {
+    let disposed = false;
+    api.credential.list().then((items) => { if (!disposed) setProfiles(items); }, () => { if (!disposed) setProfileError(true); });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     if (!dirTouched) setDirName(nameFromUrl(url));
@@ -111,36 +128,60 @@ export function CloneDialog() {
   const sep = parent.includes('\\') ? '\\' : '/';
   const dest = parent && dirName ? `${parent.replace(/[\\/]+$/, '')}${sep}${dirName}` : '';
 
+  const closeIfIdle = () => { if (!submitting.current) close(); };
+  const authValid = !https || auth.choice !== 'other' || (!!auth.username.trim() && !!auth.secret);
   const submit = async () => {
+    if (submitting.current || !authValid || !url.trim() || !dest) return;
+    submitting.current = true;
+    setBusy(true);
+    setSubmitError(false);
+    const req: CloneReq = { url: url.trim(), dest, branch: branch.trim() || null, depth: depth ? Number(depth) : null, name };
+    if (https && auth.choice === 'other') {
+      req.credential = { username: auth.username.trim(), secret: auth.secret, remember: auth.remember, name: auth.name.trim() || undefined };
+    } else if (https && auth.choice !== 'auto') {
+      req.credentialId = auth.choice;
+    }
     try {
-      await api.task.clone({ url: url.trim(), dest, branch: branch.trim() || null, depth: depth ? Number(depth) : null, name });
+      const id = await api.task.clone(req);
+      useAuth.getState().rememberClone(id, cloneRetry(req));
+      auth.setSecret('');
       void api.settings.set('cloneParent', parent);
       useApp.getState().patchSetting('cloneParent', parent);
       useApp.getState().setBottom(true, 'tasks');
       toast('info', t('clone.started', { name: name.trim() || dirName }));
       close();
-    } catch (e) {
-      reportError(e);
+    } catch {
+      // Credential-bearing requests must never populate global toasts with raw errors.
+      auth.setSecret('');
+      setSubmitError(true);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
   };
 
   return (
     <Modal
       title={t('clone.title')}
-      onClose={close}
+      onClose={closeIfIdle}
       width={560}
       footer={
         <>
-          <button onClick={close}>{t('common.cancel')}</button>
-          <button className="primary" disabled={!url.trim() || !dest} onClick={submit}>
+          <button disabled={busy} onClick={closeIfIdle}>{t('common.cancel')}</button>
+          <button className="primary" disabled={!url.trim() || !dest || !authValid || busy} onClick={submit}>
             {t('clone.start')}
           </button>
         </>
       }
     >
+      {submitError && <p className="error-text" role="alert">{t('auth.cloneFailed')}</p>}
       <Field label={t('clone.url')} hint={t('clone.tokenNote')}>
         <input value={url} onChange={(e) => setUrl(e.target.value)} className="mono" placeholder="git@host:group/repo.git" />
       </Field>
+      {https ? <>
+        <CredentialFields url={url} profiles={profiles} form={auth} disabled={busy} />
+        {profileError && <p className="warn-text">{t('auth.profilesUnavailable')}</p>}
+      </> : <p className="muted small-text">{t(/^http:\/\//i.test(url.trim()) ? 'auth.httpNote' : 'auth.sshNote')}</p>}
       <Field label={t('clone.parent')}>
         <div className="input-row">
           <input value={parent} onChange={(e) => setParent(e.target.value)} className="mono" />

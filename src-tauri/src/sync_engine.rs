@@ -404,7 +404,7 @@ pub fn run(
         }
         req.target_ids.as_ref().map(|ids| ids.contains(&t.target_id)).unwrap_or(true)
     };
-    let opts = RunOpts { cancel: Some(cancel.clone()), progress: Some(progress.clone()), ..Default::default() };
+    let opts = RunOpts { cancel: Some(cancel.clone()), redact_stdout: true, progress: Some(progress.clone()), ..Default::default() };
 
     for m in &selected {
         // ---------- 1. pull / both 目标：fetch → 计算 behind → 集成 ----------

@@ -16,7 +16,7 @@ pub fn redact(s: &str) -> String {
     cred_re().replace_all(s, "${1}***@").into_owned()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct StrippedUrl {
     pub url: String,
     pub username: Option<String>,
@@ -39,7 +39,7 @@ pub fn strip_url_credentials(url: &str) -> StrippedUrl {
         None => return unchanged,
     };
     let rest = &url[scheme_end..];
-    let host_end = rest.find('/').unwrap_or(rest.len());
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..host_end];
     let at = match authority.rfind('@') {
         Some(at) => at,
@@ -54,7 +54,12 @@ pub fn strip_url_credentials(url: &str) -> StrippedUrl {
         return unchanged;
     }
     StrippedUrl {
-        url: format!("{}{}{}", &url[..scheme_end], &authority[at + 1..], &rest[host_end..]),
+        url: format!(
+            "{}{}{}",
+            &url[..scheme_end],
+            &authority[at + 1..],
+            &rest[host_end..]
+        ),
         username: Some(percent_decode(user)),
         password: Some(percent_decode(pass)),
     }
@@ -79,27 +84,61 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// 凭据键：`scheme://host[:port]`，小写，不含用户名与路径。
-pub fn host_key(url: &str) -> Option<String> {
-    let scheme_end = url.find("://")?;
-    let scheme = url[..scheme_end].to_ascii_lowercase();
-    if scheme != "http" && scheme != "https" {
+/// Parsed HTTP(S) origin and optional percent-decoded account hint. Passwords
+/// never participate in scope. Reject URL-parser recovery of malformed authority.
+pub fn http_scope(url: &str) -> Option<(String, Option<String>)> {
+    if url.chars().any(|c| c.is_whitespace() || c.is_control()) || url.contains('\\') {
         return None;
     }
-    let rest = &url[scheme_end + 3..];
-    let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
-    let host = match authority.rfind('@') {
-        Some(at) => &authority[at + 1..],
-        None => authority,
+    let (scheme, rest) = url.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("https") && !scheme.eq_ignore_ascii_case("http") {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit('@').next()?;
+    if host.is_empty() || host.ends_with(':') || authority.matches('@').count() > 1 {
+        return None;
+    }
+    let parsed = tauri::Url::parse(url).ok()?;
+    parsed.host_str()?;
+    let hint = if parsed.username().is_empty() {
+        None
+    } else {
+        let encoded = parsed.username().as_bytes();
+        let mut decoded = Vec::new();
+        let mut i = 0;
+        while i < encoded.len() {
+            if encoded[i] == b'%' {
+                let hex = std::str::from_utf8(encoded.get(i + 1..i + 3)?).ok()?;
+                decoded.push(u8::from_str_radix(hex, 16).ok()?);
+                i += 3;
+            } else {
+                decoded.push(encoded[i]);
+                i += 1;
+            }
+        }
+        let hint = String::from_utf8(decoded).ok()?;
+        if hint.chars().any(char::is_control) {
+            return None;
+        }
+        Some(hint)
     };
-    if host.is_empty() {
-        return None;
-    }
-    Some(format!("{}://{}", scheme, host.to_ascii_lowercase()))
+    Some((parsed.origin().ascii_serialization(), hint))
+}
+
+/// Credential scope is scheme + normalized authority, never userinfo or path.
+pub fn host_key(url: &str) -> Option<String> {
+    http_scope(url).map(|(origin, _)| origin)
 }
 
 fn kr_err(e: keyring::Error) -> AppError {
-    AppError::new("credential.error").detail(e.to_string())
+    // Backend errors can contain credential data (notably Ambiguous). Never
+    // format them, even into debug/detail fields.
+    AppError::new(match e {
+        keyring::Error::NoStorageAccess(_) => "credential.accessDenied",
+        keyring::Error::NoEntry => "credential.notFound",
+        _ => "credential.error",
+    })
 }
 
 pub fn save_credential(key: &str, username: &str, secret: &str) -> AppResult<()> {
@@ -108,14 +147,35 @@ pub fn save_credential(key: &str, username: &str, secret: &str) -> AppResult<()>
     entry.set_password(&value).map_err(kr_err)
 }
 
-pub fn load_credential(key: &str) -> Option<(String, String)> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, key).ok()?;
-    let raw = entry.get_password().ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    Some((
-        v.get("username")?.as_str()?.to_string(),
-        v.get("secret")?.as_str()?.to_string(),
+/// None means NoEntry only. Access denial and malformed stored values are errors.
+pub fn load_credential_result(key: &str) -> AppResult<Option<(String, String)>> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, key).map_err(kr_err)?;
+    let raw = match entry.get_password() {
+        Ok(raw) => raw,
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(e) => return Err(kr_err(e)),
+    };
+    decode_credential(&raw).map(Some)
+}
+
+fn decode_credential(raw: &str) -> AppResult<(String, String)> {
+    let invalid = || AppError::new("credential.invalidStoredValue");
+    let v: serde_json::Value = serde_json::from_str(raw).map_err(|_| invalid())?;
+    Ok((
+        v.get("username")
+            .and_then(|v| v.as_str())
+            .ok_or_else(invalid)?
+            .to_string(),
+        v.get("secret")
+            .and_then(|v| v.as_str())
+            .ok_or_else(invalid)?
+            .to_string(),
     ))
+}
+
+/// Legacy callers intentionally retain their best-effort behavior.
+pub fn load_credential(key: &str) -> Option<(String, String)> {
+    load_credential_result(key).ok().flatten()
 }
 
 pub fn delete_credential(key: &str) -> AppResult<()> {
@@ -155,9 +215,67 @@ mod tests {
     }
 
     #[test]
+    fn canonical_http_authorities() {
+        for (url, expected) in [
+            (
+                "HTTPS://ALICE:ignored@GitHub.com:443/a?x#y",
+                "https://github.com",
+            ),
+            ("http://Host:80?query", "http://host"),
+            ("https://host:8443#fragment", "https://host:8443"),
+            ("https://[2001:db8::1]:443/a", "https://[2001:db8::1]"),
+            ("https://host?next=https://elsewhere", "https://host"),
+        ] {
+            assert_eq!(host_key(url).as_deref(), Some(expected));
+        }
+        for malformed in [
+            "https:///missing",
+            "https://",
+            "https://?x",
+            "https://host:",
+            "https://host:abc",
+            "https://host:65536",
+            "https://a b",
+            "https://host\\evil",
+            "https://a@b@host",
+            "https://[bad]",
+            "https://host\n",
+        ] {
+            assert_eq!(host_key(malformed), None, "{malformed:?}");
+        }
+        assert_eq!(
+            http_scope("https://a%40b:password@host/a")
+                .unwrap()
+                .1
+                .as_deref(),
+            Some("a@b")
+        );
+        assert!(http_scope("https://a%zz@host").is_none());
+    }
+
+    #[test]
+    fn keyring_errors_and_malformed_values_are_sanitized() {
+        let denied = kr_err(keyring::Error::NoStorageAccess(Box::new(
+            std::io::Error::other("SECRET"),
+        )));
+        assert_eq!(denied.code, "credential.accessDenied");
+        assert!(!format!("{denied:?}").contains("SECRET"));
+        let error = kr_err(keyring::Error::Invalid("SECRET".into(), "SECRET".into()));
+        assert!(!format!("{error:?}").contains("SECRET"));
+        let error = decode_credential("SECRET").unwrap_err();
+        assert!(!format!("{error:?}").contains("SECRET"));
+    }
+
+    #[test]
     fn host_keys() {
-        assert_eq!(host_key("https://me@GitHub.com/a.git").as_deref(), Some("https://github.com"));
-        assert_eq!(host_key("http://host:8080").as_deref(), Some("http://host:8080"));
+        assert_eq!(
+            host_key("https://me@GitHub.com/a.git").as_deref(),
+            Some("https://github.com")
+        );
+        assert_eq!(
+            host_key("http://host:8080").as_deref(),
+            Some("http://host:8080")
+        );
         assert_eq!(host_key("ssh://git@host/a"), None);
     }
 }
