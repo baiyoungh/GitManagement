@@ -132,6 +132,7 @@ export function App() {
   const repoId = useApp((s) => s.selectedRepoId);
   const tab = useApp((s) => s.tab);
   const bottomOpen = useApp((s) => s.bottomOpen);
+  const bottomTab = useApp((s) => s.bottomTab);
   const setTab = useApp((s) => s.setTab);
   const repos = useRepos();
   const info = useAppInfo();
@@ -216,7 +217,7 @@ export function App() {
           <button onClick={() => useApp.getState().openDialog({ type: 'settings' })}>{t('top.settings')}</button>
         </div>
       )}
-      <SplitView id="workspace" direction="column" initialSizes={[75, 25]} minSizes={[280, 100]} collapsed={bottomOpen ? undefined : { index: 1, size: 34 }}>
+      <SplitView id="workspace" direction="column" initialSizes={[68, 32]} minSizes={[280, bottomTab === 'terminal' ? 220 : 100]} collapsed={bottomOpen ? undefined : { index: 1, size: 34 }}>
       <SplitView id="repositories" className="main" initialSizes={[20, 80]} minSizes={[180, 520]}>
         <Sidebar />
         <main className="content">

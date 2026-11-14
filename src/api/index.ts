@@ -7,6 +7,9 @@ const call = <R>(cmd: string, args?: Record<string, unknown>) => invoke<R>(cmd, 
 
 export const api = {
   files: {
+    create: (repoId: string, path: string, directory: boolean) => call<void>('files_create', { repoId, path, directory }),
+    rename: (repoId: string, path: string, newPath: string) => call<void>('files_rename', { repoId, path, newPath }),
+    delete: (repoId: string, path: string) => call<void>('files_delete', { repoId, path }),
     list: (repoId: string, path: string) => call<T.DirectoryListing>('files_list', { repoId, path }),
     read: (repoId: string, path: string) => call<T.FileDocument>('files_read', { repoId, path }),
     save: (repoId: string, path: string, revision: string, text: string) => call<T.FileDocument>('files_save', { repoId, path, revision, text }),

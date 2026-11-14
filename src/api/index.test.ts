@@ -3,6 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { api } from './index';
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined), Channel: class {} }));
 afterEach(() => vi.clearAllMocks());
+it('uses file mutation commands with camelCase arguments', async () => {
+  await api.files.create('r', 'new.txt', false);
+  await api.files.rename('r', 'new.txt', 'renamed.txt');
+  await api.files.delete('r', 'renamed.txt');
+  expect(invoke).toHaveBeenNthCalledWith(1, 'files_create', { repoId: 'r', path: 'new.txt', directory: false });
+  expect(invoke).toHaveBeenNthCalledWith(2, 'files_rename', { repoId: 'r', path: 'new.txt', newPath: 'renamed.txt' });
+  expect(invoke).toHaveBeenNthCalledWith(3, 'files_delete', { repoId: 'r', path: 'renamed.txt' });
+});
 it('uses the agreed profile command names and argument wrappers', async () => {
   const input = { id: 'a', name: 'Work', url: 'https://example.com', username: 'alice', secret: null };
   await api.credential.list();

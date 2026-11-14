@@ -90,6 +90,11 @@
     "retryClone": "Review clone and retry…"
   },
   "files": {
+    "newFile": "New file", "newFolder": "New folder", "rename": "Rename", "delete": "Delete", "name": "Name", "nameIn": "Name (directory: {{path}})",
+    "invalidName": "Enter a valid name without separators or special characters. Git metadata, reserved system names, and trailing dots/spaces are not allowed.",
+    "deleteBody": "Delete file “{{path}}”? It will be permanently removed from disk, not moved to Trash.",
+    "deleteFolderBody": "Delete empty folder “{{path}}”? Only empty folders can be deleted to prevent accidental data loss.",
+    "deleteUnsaved": "This file has unsaved edits. Deleting it will also discard those edits.",
     "title": "Repository files", "openFiles": "Open files", "refresh": "Refresh files", "retry": "Retry", "emptyDirectory": "Empty directory",
     "truncated": "This directory exceeds 10,000 entries; some entries are hidden.", "symlink": "Symbolic link or special file; use an external editor.",
     "select": "Select a file to view or edit", "save": "Save", "reload": "Reload from disk", "discard": "Discard changes", "close": "Close file",
@@ -101,6 +106,8 @@
   "terminal": {
     "title": "Terminal", "session": "Terminal {{n}}", "new": "New terminal", "close": "Close terminal session", "clear": "Clear terminal display",
     "external": "Open in external terminal", "selectRepo": "Select a repository to open a terminal.", "noSession": "No open terminal sessions.",
+    "sessions": "Terminal sessions", "closeNamed": "Close terminal {{name}}", "rename": "Rename terminal", "name": "Terminal name", "restart": "Restart",
+    "limit": "Up to 12 terminals can be open. Close an unused session first.", "emptyHint": "Open a new session in {{name}}. Collapsing the panel keeps terminals running.",
     "starting": "Starting", "running": "Running", "exited": "Exited", "failed": "Failed"
   },
   "common": {
@@ -567,6 +574,8 @@
   },
   "errors": {
     "files": {
+      "exists": "A file or folder with this name already exists. Choose another name.", "invalidName": "Invalid file or folder name.", "notEmpty": "The folder is not empty. Remove or move its contents first.",
+      "saving": "A file is being saved. Wait for the save to finish and retry.", "openDestination": "An editor tab is already open for the destination name. Save and close that tab first.",
       "unsafePath": "Cannot access Git metadata or symbolic links.", "notFile": "This path is not a regular file.",
       "conflict": "The file changed on disk. Your edits are preserved. Review external changes before reloading.", "readOnly": "This file is read-only.", "tooLarge": "File exceeds the editor's 2 MiB limit."
     },
@@ -893,6 +902,9 @@
     "until": "To date"
   },
   "batch": {
+    "remove": "Remove {{count}} repositories from list…",
+    "removeTitle": "Remove {{count}} repositories",
+    "removeBody": "Remove {{count}} selected repositories from GitManagement only? Files on disk and groups will remain unchanged.",
     "clearSelection": "Clear selection",
     "fetch": "Fetch {{count}} repositories",
     "pull": "Pull {{count}} repositories",
@@ -950,6 +962,9 @@
     "upstreamGone": "Upstream of {{count}} branches was deleted on the remote"
   },
   "groups": {
+    "removeRepos": "Remove all {{count}} repositories from list…",
+    "removeReposTitle": "Remove {{count}} repositories from group “{{name}}”",
+    "removeReposBody": "Remove all {{count}} registered repositories in group “{{name}}” from GitManagement, including favorites and repositories hidden by search? Files on disk will remain unchanged. The group itself will be retained.",
     "all": "All groups",
     "delete": "Delete group",
     "deleteBody": "Repositories in this group move to \"Ungrouped\"; they are not removed.",

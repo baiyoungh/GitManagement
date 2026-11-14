@@ -272,8 +272,14 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
 
 export function useContextMenu() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const open = (e: { clientX: number; clientY: number; preventDefault: () => void }, items: MenuItem[]) => {
+  const open = (e: { clientX: number; clientY: number; preventDefault: () => void; currentTarget?: EventTarget | null }, items: MenuItem[]) => {
     e.preventDefault();
+    // WebKit may select a word on secondary click. Clear only selections in
+    // the clicked control, never text selected in an editor or input.
+    const target = e.currentTarget;
+    const selection = window.getSelection();
+    if (target instanceof HTMLElement && target.matches('button, h3, [role="tree"]')
+      && selection?.anchorNode && target.contains(selection.anchorNode)) selection.removeAllRanges();
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
   const element = menu ? <ContextMenu {...menu} onClose={() => setMenu(null)} /> : null;

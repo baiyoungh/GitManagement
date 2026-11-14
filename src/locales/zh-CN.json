@@ -90,6 +90,11 @@
     "retryClone": "检查并重试克隆…"
   },
   "files": {
+    "newFile": "新建文件", "newFolder": "新建文件夹", "rename": "重命名", "delete": "删除", "name": "名称", "nameIn": "名称（目录：{{path}}）",
+    "invalidName": "请输入有效名称，不可包含路径分隔符或特殊字符，也不可使用 .git、系统保留名称或以点/空格结尾。",
+    "deleteBody": "确定删除文件「{{path}}」？文件将从磁盘永久删除，不会放入废纸篓。",
+    "deleteFolderBody": "确定删除空文件夹「{{path}}」？为防止误删，只允许删除空文件夹。",
+    "deleteUnsaved": "此文件还有未保存修改，删除后这些修改也将丢失。",
     "title": "仓库文件", "openFiles": "已打开文件", "refresh": "刷新文件目录", "retry": "重试", "emptyDirectory": "空目录",
     "truncated": "此目录超过 10000 项，未全部显示。", "symlink": "符号链接或特殊文件，使用外部编辑器打开。",
     "select": "选择文件查看或编辑", "save": "保存", "reload": "重新加载磁盘内容", "discard": "放弃修改", "close": "关闭文件",
@@ -101,6 +106,8 @@
   "terminal": {
     "title": "终端", "session": "终端 {{n}}", "new": "新建终端", "close": "关闭终端会话", "clear": "清空终端显示",
     "external": "在外部终端打开", "selectRepo": "选择仓库后打开终端。", "noSession": "没有打开的终端会话。",
+    "sessions": "终端会话", "closeNamed": "关闭终端 {{name}}", "rename": "重命名终端", "name": "终端名称", "restart": "重新启动",
+    "limit": "最多打开 12 个终端，请先关闭不再使用的会话。", "emptyHint": "在 {{name}} 中打开一个新会话。收起面板不会关闭终端。",
     "starting": "正在启动", "running": "运行中", "exited": "已退出", "failed": "启动失败"
   },
   "common": {
@@ -567,6 +574,8 @@
   },
   "errors": {
     "files": {
+      "exists": "已存在同名文件或文件夹，请使用其他名称。", "invalidName": "文件或文件夹名称无效。", "notEmpty": "文件夹不为空，请先删除或移走其中的内容。",
+      "saving": "文件正在保存，请等待保存完成后重试。", "openDestination": "目标名称有已打开的编辑标签，请先保存并关闭该标签。",
       "unsafePath": "无法访问该路径：不允许访问 Git 元数据或符号链接。", "notFile": "该路径不是普通文件。",
       "conflict": "文件已被其他程序修改。编辑内容已保留，请核对磁盘内容后重新加载。", "readOnly": "此文件只读，无法保存。", "tooLarge": "文件超过 2 MiB，无法在内置编辑器中保存。"
     },
@@ -893,6 +902,9 @@
     "until": "结束日期"
   },
   "batch": {
+    "remove": "从列表移除 {{count}} 个仓库…",
+    "removeTitle": "移除 {{count}} 个仓库",
+    "removeBody": "仅从 GitManagement 中移除选中的 {{count}} 个仓库？磁盘上的文件和分组均保持不变。",
     "clearSelection": "取消多选",
     "fetch": "Fetch {{count}} 个仓库",
     "pull": "Pull {{count}} 个仓库",
@@ -950,6 +962,9 @@
     "upstreamGone": "{{count}} 个分支的 upstream 已在远端删除"
   },
   "groups": {
+    "removeRepos": "从列表移除全部 {{count}} 个仓库…",
+    "removeReposTitle": "移除分组「{{name}}」中的 {{count}} 个仓库",
+    "removeReposBody": "从 GitManagement 中移除分组「{{name}}」中全部 {{count}} 个已登记仓库，包括收藏及被搜索隐藏的仓库？磁盘上的文件保持不变，分组本身将保留。",
     "all": "全部分组",
     "delete": "删除分组",
     "deleteBody": "组内仓库会移到「未分组」，不会从工具中移除。",

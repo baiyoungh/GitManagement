@@ -7,6 +7,31 @@ const key = fileKey('repo-a', 'file.txt');
 beforeEach(() => useFiles.setState({ buffers: {}, selected: {} }));
 
 describe('file editing buffers', () => {
+  it('renames directory buffers and selection without losing dirty text or affecting siblings/repos', () => {
+    const s = useFiles.getState();
+    for (const path of ['src/a.txt', 'src/nested/b.txt', 'src-other/c.txt']) s.load('repo-a', path, source);
+    s.load('repo-b', 'src/a.txt', source);
+    s.edit(fileKey('repo-a', 'src/a.txt'), 'unsaved');
+    s.select('repo-a', 'src/a.txt');
+    s.renamePath('repo-a', 'src', 'lib');
+    expect(useFiles.getState().selected['repo-a']).toBe('lib/a.txt');
+    expect(useFiles.getState().buffers[fileKey('repo-a', 'lib/a.txt')].text).toBe('unsaved');
+    expect(useFiles.getState().buffers[fileKey('repo-a', 'src/a.txt')]).toBeUndefined();
+    expect(useFiles.getState().buffers[fileKey('repo-a', 'lib/nested/b.txt')]).toBeTruthy();
+    expect(useFiles.getState().buffers[fileKey('repo-a', 'src-other/c.txt')]).toBeTruthy();
+    expect(useFiles.getState().buffers[fileKey('repo-b', 'src/a.txt')]).toBeTruthy();
+  });
+  it('removes only matching buffers and chooses a remaining tab', () => {
+    const s = useFiles.getState();
+    s.load('repo-a', 'keep.txt', source);
+    s.load('repo-a', 'src/a.txt', source);
+    s.load('repo-b', 'src/a.txt', source);
+    s.select('repo-a', 'src/a.txt');
+    s.removePath('repo-a', 'src');
+    expect(useFiles.getState().selected['repo-a']).toBe('keep.txt');
+    expect(useFiles.getState().buffers[fileKey('repo-a', 'src/a.txt')]).toBeUndefined();
+    expect(useFiles.getState().buffers[fileKey('repo-b', 'src/a.txt')]).toBeTruthy();
+  });
   it('keeps dirty edits isolated across files and repositories and external refresh', () => {
     const s = useFiles.getState();
     s.load('repo-a', 'file.txt', source);

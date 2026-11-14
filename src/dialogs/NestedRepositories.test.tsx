@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '../i18n';
 import { api } from '../api';
@@ -29,37 +29,37 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); queryClient.clear(); vi.restoreAllMocks(); });
 function show(element: React.ReactNode) { render(<QueryClientProvider client={queryClient}>{element}</QueryClientProvider>); }
-async function chooseChild() {
-  const family = await screen.findByRole('navigation', { name: '当前仓库及子仓库' });
-  fireEvent.click(within(family).getByText('Child').closest('button')!);
-  await waitFor(() => expect(api.branch.list).toHaveBeenCalledWith('child'));
+async function selectedRemote() {
   return screen.findByRole('button', { name: 'feature' });
 }
 
-it('creates a branch from the nested repository remote rather than the parent', async () => {
-  show(<BranchPopup repoId="root" />);
-  fireEvent.click(await chooseChild());
+it('opens only the requested repository without a repository sidebar or nested scan', async () => {
+  const add = vi.spyOn(api.repo, 'add');
+  show(<BranchPopup repoId="child" />);
+  await selectedRemote();
+  expect(screen.getByRole('dialog', { name: '分支 · Child' })).toBeTruthy();
+  expect(screen.queryByRole('navigation', { name: '当前仓库及子仓库' })).toBeNull();
+  expect(screen.queryByRole('searchbox', { name: '搜索仓库' })).toBeNull();
+  expect(api.branch.list).toHaveBeenCalledWith('child');
+  expect(api.branch.list).not.toHaveBeenCalledWith('root');
+  expect(api.scan.run).not.toHaveBeenCalled();
+  expect(add).not.toHaveBeenCalled();
+});
+
+it('creates a branch in the requested child rather than its parent', async () => {
+  show(<BranchPopup repoId="child" />);
+  fireEvent.click(await selectedRemote());
   fireEvent.click(screen.getByRole('menuitem', { name: '从「origin/feature」新建分支…' }));
   expect(useApp.getState().dialog).toEqual({ type: 'createBranch', repoId: 'child', startPoint: 'refs/remotes/origin/feature' });
 });
 
-it('checks out a remote in the child and keeps the parent view selected', async () => {
+it('checks out a remote in the requested child and keeps the parent view selected', async () => {
   vi.spyOn(api.branch, 'checkoutRemote').mockResolvedValue('feature');
-  show(<BranchPopup repoId="root" />);
-  fireEvent.click(await chooseChild());
+  show(<BranchPopup repoId="child" />);
+  fireEvent.click(await selectedRemote());
   fireEvent.click(screen.getByRole('menuitem', { name: '检出' }));
   await waitFor(() => expect(api.branch.checkoutRemote).toHaveBeenCalledWith('child', 'origin', 'feature'));
   expect(useApp.getState().selectedRepoId).toBe('root');
-});
-
-it('discovers and registers an unlisted child only when it is selected', async () => {
-  vi.mocked(api.repo.list).mockResolvedValue([root]);
-  vi.spyOn(api.repo, 'add').mockImplementation(async () => { vi.mocked(api.repo.list).mockResolvedValue([root, child]); return child; });
-  show(<BranchPopup repoId="root" />);
-  await chooseChild();
-  expect(api.scan.run).toHaveBeenCalledWith('/project', 8);
-  expect(api.repo.add).toHaveBeenCalledWith(child.path, false);
-  expect(screen.getByText('分支 · Child')).toBeTruthy();
 });
 
 it('scans the requested depth, excludes registered roots from import and clears stale results', async () => {

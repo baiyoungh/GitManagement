@@ -118,6 +118,39 @@ pub async fn files_save(state: State<'_, AppState>, repo_id: String, path: Strin
 }
 
 #[tauri::command]
+pub async fn files_create(state: State<'_, AppState>, repo_id: String, path: String, directory: bool) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::create(&root, &path, directory)
+    }).await
+}
+
+#[tauri::command]
+pub async fn files_rename(state: State<'_, AppState>, repo_id: String, path: String, new_path: String) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::rename(&root, &path, &new_path)
+    }).await
+}
+
+#[tauri::command]
+pub async fn files_delete(state: State<'_, AppState>, repo_id: String, path: String) -> AppResult<()> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let root = st.repo_path(&repo_id)?;
+        let lock = st.tasks.repo_lock(&repo_id);
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        crate::files::delete(&root, &path)
+    }).await
+}
+
+#[tauri::command]
 pub async fn terminal_open(state: State<'_, AppState>, repo_id: String, id: String, cols: u16, rows: u16, on_event: tauri::ipc::Channel<crate::terminal::TerminalEvent>) -> AppResult<()> {
     let root = state.repo_path(&repo_id)?;
     let manager = state.terminals.clone();
