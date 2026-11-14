@@ -640,8 +640,15 @@ impl Invocation {
                     Ok((mut stream, _)) => {
                         // A single Git command invokes credential helpers serially. Reject
                         // unauthenticated/oversized connections before any GUI or secret read.
-                        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-                        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+                        // Accepted sockets can inherit O_NONBLOCK (notably on macOS).
+                        // A timeout does not clear it: fragmented JSON would be discarded
+                        // on WouldBlock, and response writes could be truncated as well.
+                        if stream.set_nonblocking(false).is_err()
+                            || stream.set_read_timeout(Some(Duration::from_secs(2))).is_err()
+                            || stream.set_write_timeout(Some(Duration::from_secs(2))).is_err()
+                        {
+                            continue;
+                        }
                         let mut raw = String::new();
                         let parsed = BufReader::new((&mut stream).take(MAX_MESSAGE + 1))
                             .read_line(&mut raw)
@@ -969,6 +976,36 @@ pub fn helper_request(action: &str, fields: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn invocation_waits_for_a_complete_fragmented_request() {
+        let db = Arc::new(Db::open_in_memory().unwrap());
+        let broker = AuthBroker::new(db, Arc::new(|_, _| {}));
+        let context = broker.context(None, false);
+        context.set_initial("http://127.0.0.1:45678/repo.git", None, Some(CredentialAnswer {
+            username: "integration-user".into(), secret: "fragmented-secret".into(),
+            remember: false, name: None,
+        })).unwrap();
+        let invocation = Invocation::start(context, CancelToken::new(), crate::git::runner::detect_git(None)).unwrap();
+        let request = serde_json::to_vec(&WireRequest {
+            nonce: invocation.nonce.clone(), action: "get".into(),
+            fields: "protocol=http\nhost=127.0.0.1:45678\npath=repo.git\n\n".into(),
+        }).unwrap();
+        let mut stream = TcpStream::connect(&invocation.endpoint).unwrap();
+        stream.set_read_timeout(Some(Duration::from_millis(150))).unwrap();
+        stream.write_all(&request[..request.len() / 2]).unwrap();
+        let mut byte = [0];
+        let error = stream.read(&mut byte).expect_err("incomplete request was answered or closed");
+        assert!(matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut));
+        stream.write_all(&request[request.len() / 2..]).unwrap();
+        stream.write_all(b"\n").unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut response = String::new();
+        BufReader::new(stream).read_line(&mut response).unwrap();
+        let response: WireResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(response.answer.as_deref(), Some("username=integration-user\npassword=fragmented-secret\n\n"));
+        assert!(invocation.error().is_none());
+    }
+
     #[test]
     fn helper_scope_validates_fields() {
         assert_eq!(

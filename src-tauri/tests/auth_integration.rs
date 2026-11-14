@@ -46,6 +46,9 @@ impl HttpRemote {
                 match listener.accept() {
                     Ok((mut stream, peer)) => {
                         assert!(peer.ip().is_loopback());
+                        // Accepted sockets may inherit the listener's nonblocking mode.
+                        // Wait for full headers instead of responding to a partial read.
+                        stream.set_nonblocking(false).unwrap();
                         stream
                             .set_read_timeout(Some(Duration::from_secs(2)))
                             .unwrap();
@@ -56,14 +59,17 @@ impl HttpRemote {
                         let mut request = String::new();
                         let mut authorized = false;
                         let mut bytes = 0;
-                        loop {
+                        let complete = loop {
                             let mut line = String::new();
                             match reader.read_line(&mut line) {
-                                Ok(0) | Err(_) => break,
+                                Ok(0) | Err(_) => break false,
                                 Ok(n) => bytes += n,
                             }
-                            if bytes > 16384 || line == "\r\n" {
-                                break;
+                            if bytes > 16384 {
+                                break false;
+                            }
+                            if line == "\r\n" {
+                                break true;
                             }
                             if request.is_empty() {
                                 request = line.clone();
@@ -75,6 +81,9 @@ impl HttpRemote {
                                     authorized = true;
                                 }
                             }
+                        };
+                        if !complete {
+                            continue;
                         }
                         let (status, headers, body) = if authorized {
                             good.fetch_add(1, Ordering::SeqCst);
@@ -292,6 +301,24 @@ impl<T> Drop for Running<T> {
             let _ = thread.join();
         }
     }
+}
+
+#[test]
+fn http_remote_waits_for_complete_fragmented_headers() {
+    let remote = HttpRemote::new();
+    let mut stream = TcpStream::connect(remote.address).unwrap();
+    stream.set_read_timeout(Some(Duration::from_millis(150))).unwrap();
+    stream.write_all(b"GET /repo.git/info/refs?service=git-upload-pack HTTP/1.1\r\nAuth").unwrap();
+    let mut byte = [0];
+    let error = stream.read(&mut byte).expect_err("incomplete headers were answered or closed");
+    assert!(matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut));
+    stream.write_all(format!("orization: {BASIC}\r\nHost: {}\r\n\r\n", remote.address).as_bytes()).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert_eq!(remote.accepted.load(Ordering::SeqCst), 1);
+    assert_eq!(remote.rejected.load(Ordering::SeqCst), 0);
 }
 
 #[test]
